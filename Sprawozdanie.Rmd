@@ -13,7 +13,7 @@ cos tam cos tam
 
 ## Zmienna objaśniana
 
-Close - zmienna objasniana bedzie rentownosc 10-letnich polskich obligacji skarbowcyh
+CLOSE - zmienna objasniana bedzie rentownosc 10-letnich polskich obligacji skarbowcyh
 
 ## Zmienne objaśniające
 
@@ -30,7 +30,7 @@ INFLATION - inflacja r/r wobec miesiąca odpowiadającego z roku temu\
 
 [www.stooq.com](https://stooq.pl)\
 
-```{r setup, include=FALSE}
+```{r setup, echo=FALSE, warning=FALSE, message = FALSE}
 library(corrplot)
 library(readxl)
 library(tinytex)
@@ -48,32 +48,18 @@ library(zoo)
 # Wczytywanie danych
 
 ```{r}
+data <- read_excel("data.xlsx")
 
-data_numeric <- read_excel("data2.xlsx")
+data <- data[, c("CLOSE", "INFLATION", "XAUUSD", "USDPLN", "WIG20", "S&P500", 
+                 "UNEMPLOYMENT", "PMI", "OIL")]
 
-data_numeric <- data_numeric[, c("Close", "Inflation",  "XAUUSD", 
-                          "USDPLN",  
-                          "WIG20", "S&P500", "UNEMPLOYMENT", "PMI", "OIL")]
-
-Y <- data_numeric["Close"]
-X <- data_numeric[,c("Inflation","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT","PMI","OIL")]
-
-data_numeric <- data_numeric[sapply(data_numeric, is.numeric)]
-
-
-
-
-data_numeric_interp <- data_numeric
-
-
-numeric_cols <- sapply(data_numeric_interp, is.numeric)
-
-data_numeric_interp[numeric_cols] <- lapply(data_numeric_interp[numeric_cols], function(col) {
+data[] <- lapply(data, function(col) {
   na.approx(col, na.rm = FALSE)
 })
 
-
-
+Y <- data["CLOSE"]
+X <- data[,c("INFLATION","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT",
+             "PMI","OIL")]
 ```
 
 # Podstawowe statystyki
@@ -99,8 +85,8 @@ summary(X)
 
 # Macierz korelacji
 
-```{r corrplot, fig.width=20, fig.height=20}
-cor_matrix <- cor(data_numeric, use = "pairwise.complete.obs", method = "pearson")
+```{r corrplot, fig.width=20, fig.height=20, echo=FALSE}
+cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
 
 
     corrplot(cor_matrix, method = "color",
@@ -111,12 +97,7 @@ cor_matrix <- cor(data_numeric, use = "pairwise.complete.obs", method = "pearson
 
 ## Test
 
-```{r analiza_stacjonarnosci, warning=FALSE, message=FALSE, fig.height=5, fig.width=7, fig.align='center'}
-
-library(ggplot2)
-library(dplyr)
-library(tseries)
-library(urca)
+```{r analiza_stacjonarnosci, warning=FALSE, message=FALSE, fig.height=5, fig.width=7, fig.align='center', echo=FALSE}
 
 # Funkcja do testu ADF
 adf_result <- function(series, name) {
@@ -136,16 +117,16 @@ kpss_result <- function(series, name) {
 # Funkcja do wykresów
 plot_series_diff <- function(series, name) {
   df <- data.frame(
-    Time = 1:length(series),
+    Miesiące = 1:length(series),
     Series = as.numeric(series),
     Diff = c(NA, diff(series))
   )
 
-  p1 <- ggplot(df, aes(x = Time, y = Series)) +
+  p1 <- ggplot(df, aes(x = Miesiące, y = Series)) +
     geom_line(color = "blue") +
     labs(title = paste("Szereg czasowy:", name), y = name)
 
-  p2 <- ggplot(df, aes(x = Time, y = Diff)) +
+  p2 <- ggplot(df, aes(x = Miesiące, y = Diff)) +
     geom_line(color = "red") +
     labs(title = paste("Pierwsza różnica:", name), y = paste("delta", name))
 
@@ -172,7 +153,7 @@ non_stationary_vars <- c()
 # Analiza zmiennych
 for (var in colnames(X)) {
   cat("## Zmienna:", var, "\n\n")
-  series <- ts(data_numeric[[var]])
+  series <- ts(data[[var]])
 
   # Testy
   if (is_non_stationary(series)) {
@@ -188,7 +169,33 @@ for (var in colnames(X)) {
   adf_result(series, var)
   kpss_result(series, var)
 }
+```
 
-cat("Zidentyfikowane zmienne niestacjonarne:\n")
-print(non_stationary_vars)
+## Zidentyfikowane zmienne niestacjonarne:
 
+```{r , echo=FALSE,comment = NA}
+for (var in non_stationary_vars) {
+  cat(var, "\n")
+}
+
+```
+
+## Usunięcie niestacjonarności 
+```{r}
+
+```
+
+## Usunięcie zmiennych o zerowej wariancji
+
+```{r}
+
+
+```
+
+# Metoda doboru zmiennych
+
+## Metoda Hellwiga
+
+```{r}
+
+```
