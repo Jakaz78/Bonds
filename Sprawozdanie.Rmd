@@ -1,0 +1,89 @@
+---
+title: "Sprawozdanie"
+author: "Jakub Kaźmierczyk"
+date: "2025-05-29"
+output: pdf_document
+---
+
+# Wprowadzenie
+
+## Opis projektu 
+
+cos tam cos tam
+
+## Zmienna objaśniana 
+
+Close - zmienna objasniana bedzie rentownosc 10-letnich polskich obligacji skarbowcyh
+
+## Zmienne objaśniające 
+
+XAUUSD - cena złota w dolarze amerykańskim\
+S&P500 - ETF 500 największych notowanych na giełdzie amerykańskich spółek\
+PMI - cos tam\
+WIG20 - 20 najwiekszych notowanych na gieldzie polskich spolek\
+OIL - cena ropy naftowej za barylke\
+UNEMPLOYMENT - stopa bezrobocia w Polsce\
+USDPLN - kurs dolara amerykańskiego wyrażony w złotych\
+INFLATION - inflacja r/r wobec miesiąca odpowiadającego z roku temu\
+
+
+## Źródła 
+www.stooq.com\
+google.com\
+
+```{r setup, include=FALSE}
+library(corrplot)
+library(readxl)
+library(tinytex)
+library(ggcorrplot)
+
+```
+
+# Wczytywanie danych
+
+```{r}
+
+data2 <- read_excel("data2.xlsx")
+
+data_numeric <- data2[, c("Close", "Inflation",  "XAUUSD", 
+                          "USDPLN",  
+                          "WIG20", "S&P500", "UNEMPLOYMENT", "PMI", "OIL")]
+
+Y <- data2["Close"]
+X <- data2[,c("Inflation","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT","PMI","OIL")]
+
+data_numeric <- data_numeric[sapply(data_numeric, is.numeric)]
+```
+
+# Podstawowe statystyki
+
+```{r}
+summary(Y)
+summary(X)
+```
+
+# Zaleznosci miedzy Y a X
+
+```{r}
+
+```
+
+# Macierz korelacji 
+
+```{r corrplot, fig.width=20, fig.height=20}
+cor_matrix <- cor(data_numeric, use = "pairwise.complete.obs", method = "pearson")
+
+
+    corrplot(cor_matrix, method = "color",
+           order = "hclust",
+           addCoef.col = "black", 
+           tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
+```
+
+
+
+
+
+
+
+

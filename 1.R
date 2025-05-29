@@ -16,5 +16,5 @@ cor_matrix <- cor(data_numeric, use = "pairwise.complete.obs", method = "pearson
 
 corrplot(cor_matrix, method = "color",
          order = "hclust",
-         addCoef.col = "black", # dodaj wartości korelacji
+         addCoef.col = "black", 
          tl.col = "black", tl.cex = 0.8)
