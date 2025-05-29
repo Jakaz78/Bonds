@@ -40,6 +40,8 @@ library(tseries)
 library(ggplot2)   
 library(dplyr)     
 library(tidyr)
+library(zoo)
+
 
 ```
 
@@ -47,16 +49,31 @@ library(tidyr)
 
 ```{r}
 
-data2 <- read_excel("data2.xlsx")
+data_numeric <- read_excel("data2.xlsx")
 
-data_numeric <- data2[, c("Close", "Inflation",  "XAUUSD", 
+data_numeric <- data_numeric[, c("Close", "Inflation",  "XAUUSD", 
                           "USDPLN",  
                           "WIG20", "S&P500", "UNEMPLOYMENT", "PMI", "OIL")]
 
-Y <- data2["Close"]
-X <- data2[,c("Inflation","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT","PMI","OIL")]
+Y <- data_numeric["Close"]
+X <- data_numeric[,c("Inflation","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT","PMI","OIL")]
 
 data_numeric <- data_numeric[sapply(data_numeric, is.numeric)]
+
+
+
+
+data_numeric_interp <- data_numeric
+
+
+numeric_cols <- sapply(data_numeric_interp, is.numeric)
+
+data_numeric_interp[numeric_cols] <- lapply(data_numeric_interp[numeric_cols], function(col) {
+  na.approx(col, na.rm = FALSE)
+})
+
+
+
 ```
 
 # Podstawowe statystyki
@@ -94,20 +111,26 @@ cor_matrix <- cor(data_numeric, use = "pairwise.complete.obs", method = "pearson
 
 ## Test
 
-```{r}
+```{r analiza_stacjonarnosci, warning=FALSE, message=FALSE, fig.height=5, fig.width=7, fig.align='center'}
+
+library(ggplot2)
+library(dplyr)
+library(tseries)
+library(urca)
+
 # Funkcja do testu ADF
 adf_result <- function(series, name) {
   test <- ur.df(series, type = "trend", selectlags = "AIC")
-  cat("Test ADF dla zmiennej:", name, "\n")
-  print(summary(test))
-  cat("\n\n")
+  #cat("Test ADF dla zmiennej:", name, "\n")
+  #print(summary(test))
+  #cat("\n\n")
 }
 
 # Funkcja do testu KPSS
 kpss_result <- function(series, name) {
-  cat("Test KPSS dla zmiennej:", name, "\n")
-  print(kpss.test(series))
-  cat("\n\n")
+  #cat("Test KPSS dla zmiennej:", name, "\n")
+  #print(kpss.test(series))
+  #cat("\n\n")
 }
 
 # Funkcja do wykresów
@@ -124,29 +147,48 @@ plot_series_diff <- function(series, name) {
 
   p2 <- ggplot(df, aes(x = Time, y = Diff)) +
     geom_line(color = "red") +
-    labs(title = paste("Pierwsza różnica:", name), y = paste("Δ", name))
+    labs(title = paste("Pierwsza różnica:", name), y = paste("delta", name))
 
   list(p1, p2)
 }
-variables <- c("Close", "Inflation", "XAUUSD", "USDPLN", 
-               "WIG20", "S&P500", "UNEMPLOYMENT", "PMI", "OIL")
 
-for (var in variables) {
+# Funkcja pomocnicza do sprawdzenia stacjonarności
+is_non_stationary <- function(series) {
+  adf <- ur.df(series, type = "trend", selectlags = "AIC")
+  adf_stat <- adf@teststat[1]
+  adf_crit <- adf@cval[1, "5pct"]
+  adf_stationary <- (adf_stat < adf_crit)
+
+  kpss <- kpss.test(series)
+  kpss_stationary <- (kpss$p.value > 0.05)
+
+  # Jeśli przynajmniej jeden test mówi, że nie jest stacjonarna → uznaj za niestacjonarną
+  return(!(adf_stationary & kpss_stationary))
+}
+
+# Inicjalizacja pustego wektora
+non_stationary_vars <- c()
+
+# Analiza zmiennych
+for (var in colnames(X)) {
   cat("## Zmienna:", var, "\n\n")
-  series <- ts(data2[[var]])
+  series <- ts(data_numeric[[var]])
+
+  # Testy
+  if (is_non_stationary(series)) {
+    non_stationary_vars <- c(non_stationary_vars, var)
+  }
 
   # Wykresy
   plots <- plot_series_diff(series, var)
   print(plots[[1]])
   print(plots[[2]])
 
-  # Test ADF
+  # Szczegóły testów
   adf_result(series, var)
-
-  # Test KPSS
   kpss_result(series, var)
-
-  cat("\n\n")
 }
 
-```
+cat("Zidentyfikowane zmienne niestacjonarne:\n")
+print(non_stationary_vars)
+
