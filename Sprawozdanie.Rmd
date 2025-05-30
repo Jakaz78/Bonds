@@ -41,7 +41,8 @@ library(ggplot2)
 library(dplyr)     
 library(tidyr)
 library(zoo)
-
+library(gridExtra)
+library(grid)
 
 ```
 
@@ -74,16 +75,9 @@ summary(Y)
 
 ```{r}
 summary(X)
-
 ```
 
-# Zaleznosci miedzy Y a X
-
-```{r}
-
-```
-
-# Macierz korelacji
+## Macierz korelacji
 
 ```{r corrplot, fig.width=20, fig.height=20, echo=FALSE}
 cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
@@ -95,79 +89,38 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
 
-## Test
+# Identyfikacja niestacjonarnych zmiennych objaśniających
 
 ```{r analiza_stacjonarnosci, warning=FALSE, message=FALSE, fig.height=5, fig.width=7, fig.align='center', echo=FALSE}
 
-# Funkcja do testu ADF
-adf_result <- function(series, name) {
-  test <- ur.df(series, type = "trend", selectlags = "AIC")
-  #cat("Test ADF dla zmiennej:", name, "\n")
-  #print(summary(test))
-  #cat("\n\n")
+is_stationary_test <- function(series) {
+
+  adf_result <- {
+    adf <- ur.df(series, type = "trend", selectlags = "AIC")
+    adf_stat <- adf@teststat[1]
+    adf_crit <- adf@cval[1, "5pct"]
+    adf_stat < adf_crit
+  }
+
+  kpss_result <- {
+    kpss <- kpss.test(series)
+    kpss$p.value > 0.05
+  }
+
+  return(adf_result && kpss_result)
 }
 
-# Funkcja do testu KPSS
-kpss_result <- function(series, name) {
-  #cat("Test KPSS dla zmiennej:", name, "\n")
-  #print(kpss.test(series))
-  #cat("\n\n")
-}
 
-# Funkcja do wykresów
-plot_series_diff <- function(series, name) {
-  df <- data.frame(
-    Miesiące = 1:length(series),
-    Series = as.numeric(series),
-    Diff = c(NA, diff(series))
-  )
-
-  p1 <- ggplot(df, aes(x = Miesiące, y = Series)) +
-    geom_line(color = "blue") +
-    labs(title = paste("Szereg czasowy:", name), y = name)
-
-  p2 <- ggplot(df, aes(x = Miesiące, y = Diff)) +
-    geom_line(color = "red") +
-    labs(title = paste("Pierwsza różnica:", name), y = paste("delta", name))
-
-  list(p1, p2)
-}
-
-# Funkcja pomocnicza do sprawdzenia stacjonarności
-is_non_stationary <- function(series) {
-  adf <- ur.df(series, type = "trend", selectlags = "AIC")
-  adf_stat <- adf@teststat[1]
-  adf_crit <- adf@cval[1, "5pct"]
-  adf_stationary <- (adf_stat < adf_crit)
-
-  kpss <- kpss.test(series)
-  kpss_stationary <- (kpss$p.value > 0.05)
-
-  # Jeśli przynajmniej jeden test mówi, że nie jest stacjonarna → uznaj za niestacjonarną
-  return(!(adf_stationary & kpss_stationary))
-}
-
-# Inicjalizacja pustego wektora
 non_stationary_vars <- c()
 
-# Analiza zmiennych
-for (var in colnames(X)) {
-  cat("## Zmienna:", var, "\n\n")
+
+for (var in colnames(data)) {
   series <- ts(data[[var]])
 
-  # Testy
-  if (is_non_stationary(series)) {
+  if (!is_stationary_test(series)) {
     non_stationary_vars <- c(non_stationary_vars, var)
   }
 
-  # Wykresy
-  plots <- plot_series_diff(series, var)
-  print(plots[[1]])
-  print(plots[[2]])
-
-  # Szczegóły testów
-  adf_result(series, var)
-  kpss_result(series, var)
 }
 ```
 
@@ -180,17 +133,183 @@ for (var in non_stationary_vars) {
 
 ```
 
-## Usunięcie niestacjonarności 
-```{r}
 
+
+## Usunięcie niestacjonarności
+
+
+```{r usuwanie_niestacjonarnosci, warning=FALSE, message=FALSE, echo=FALSE }
+is_stationary_test <- function(series) {
+  if (length(series) < 5) return(FALSE)
+
+  adf_result <- tryCatch({
+    adf <- ur.df(series, type = "trend", selectlags = "AIC")
+    adf_stat <- adf@teststat[1]
+    adf_crit <- adf@cval[1, "5pct"]
+    adf_stat < adf_crit
+  }, error = function(e) FALSE)
+
+  kpss_result <- tryCatch({
+    kpss <- kpss.test(series)
+    kpss$p.value > 0.05
+  }, error = function(e) FALSE)
+
+  return(adf_result && kpss_result)
+}
+
+remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, show_plots = TRUE) {
+  transformed_data <- list()
+  diff_info <- list()
+  plots_before <- list()
+  plots_after <- list()
+
+  for (var_name in colnames(data)) {
+    original_series <- data[[var_name]]
+    current_series <- original_series
+    order <- 0
+
+    if (show_plots) {
+      df_plot_before <- data.frame(
+        Index = 1:length(original_series),
+        Value = as.numeric(original_series)
+      )
+
+      plot_before <- ggplot(df_plot_before, aes(x = Index, y = Value)) +
+        geom_line(color = "blue", size = 0.7) +
+        labs(title = paste("Przed:", var_name),
+             x = "Czas", y = "Wartość") +
+        theme_minimal() +
+        theme(plot.title = element_text(size = 10, face = "bold"))
+
+      plots_before[[var_name]] <- plot_before
+    }
+
+    if (var_name %in% non_stationary_vars) {
+      for (i in 0:max_diff) {
+        test_series <- if (i == 0) original_series else diff(original_series, differences = i)
+
+        if (is_stationary_test(test_series)) {
+          order <- i
+          current_series <- test_series
+          break
+        }
+
+        if (i == max_diff) {
+          order <- max_diff
+          current_series <- diff(original_series, differences = max_diff)
+        }
+      }
+    }
+
+    new_name <- if (order > 0) paste0("D", if(order > 1) order else "", "_", var_name) else var_name
+    diff_info[[var_name]] <- list(order = order, name = new_name)
+    transformed_data[[new_name]] <- current_series
+
+    if (show_plots) {
+      df_plot_after <- data.frame(
+        Index = 1:length(current_series),
+        Value = as.numeric(current_series)
+      )
+
+      plot_after <- ggplot(df_plot_after, aes(x = Index, y = Value)) +
+        geom_line(color = "red", size = 0.7) +
+        labs(title = paste("Po:", new_name),
+             x = "Czas", y = "Wartość") +
+        theme_minimal() +
+        theme(plot.title = element_text(size = 10, face = "bold"))
+
+      plots_after[[var_name]] <- plot_after
+    }
+  }
+
+  max_diff_order <- max(sapply(diff_info, function(x) x$order))
+
+  final_df <- as.data.frame(lapply(transformed_data, function(x) {
+    c(rep(NA, max_diff_order), x)[1:(nrow(data) + max_diff_order)]
+  }))
+
+  final_df <- final_df[complete.cases(final_df), ]
+
+  if (show_plots && length(plots_before) > 0) {
+    for (var_name in names(plots_before)) {
+      if (var_name %in% names(plots_after)) {
+          combined_plot <- arrangeGrob(
+            plots_before[[var_name]],
+            plots_after[[var_name]],
+            ncol = 2
+          )
+          grid.newpage()
+          grid.draw(combined_plot)
+      }
+    }
+  }
+
+  return(list(
+    data = final_df,
+    diff_info = diff_info,
+    plots_before = plots_before,
+    plots_after = plots_after
+  ))
+}
+
+show_all_plots <- function(result, ncol = 2) {
+  plots_before <- result$plots_before
+  plots_after <- result$plots_after
+
+  all_plots <- list()
+  for (var_name in names(plots_before)) {
+    if (!is.null(plots_before[[var_name]]) && !is.null(plots_after[[var_name]])) {
+      all_plots <- append(all_plots, list(plots_before[[var_name]], plots_after[[var_name]]))
+    }
+  }
+
+  if (length(all_plots) > 0) {
+    num_rows <- ceiling(length(all_plots) / ncol)
+    combined <- do.call(arrangeGrob, c(all_plots, list(ncol = ncol)))
+    grid.newpage()
+    grid.draw(combined)
+  }
+}
+```
+
+
+
+```{r wywołanie_funkcji, echo=FALSE, warning=FALSE, message=FALSE}
+
+non_stationary_vars <- c()
+
+for (var in colnames(data)) {
+  series <- ts(data[[var]])
+  if (!is_stationary_test(series)) {
+    non_stationary_vars <- c(non_stationary_vars, var)
+  }
+}
+
+result <- remove_nonstationarity(data, non_stationary_vars)
+data_stationary <- result$data
+diff_info <- result$diff_info
+
+for (var in names(diff_info)) {
+  info <- diff_info[[var]]
+  cat(var, "-> różnicowana", info$order, "razy, nowa nazwa:", info$name, "\n")
+}
+```
+
+## Ponowne sprawdzenie stacjonarności zmiennych
+
+```{r sprawdzenie_zmienncyh, echo=FALSE, warning=FALSE, message=FALSE}
+cat("--- Sprawdzenie stacjonarności zmiennych po transformacji ---\n")
+for (var in colnames(data_stationary)) {
+  series_transformed <- ts(data_stationary[[var]])
+  if (is_stationary_test(series_transformed)) {
+    cat(var, ": Stacjonarna\n")
+  } else {
+    cat(var, ": Niestacjonarna")
+  }
+}
 ```
 
 ## Usunięcie zmiennych o zerowej wariancji
-
-```{r}
-
-
-```
 
 # Metoda doboru zmiennych
 
@@ -198,4 +317,183 @@ for (var in non_stationary_vars) {
 
 ```{r}
 
+
+
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Teściwo
+
+```{r usuwanie_niestacjonarnosci_z_wykresami, warning=FALSE, message=FALSE, echo=FALSE, , include=FALSE}
+
+
+remove_nonstationarity_with_plots <- function(data, non_stationary_vars, max_diff = 2, show_plots = TRUE) {
+  transformed_data <- list()
+  diff_orders <- list()
+  
+  # Lista do przechowywania wykresów
+  plots_before <- list()
+  plots_after <- list()
+  
+  for (var in colnames(data)) {
+    series <- data[[var]]
+    order <- 0
+    current_series <- series
+    
+    # Wykres przed transformacją
+    if (show_plots) {
+      df_plot <- data.frame(
+        Index = 1:length(series),
+        Value = as.numeric(series)
+      )
+      
+      plot_before <- ggplot(df_plot, aes(x = Index, y = Value)) +
+        geom_line(color = "blue", size = 0.7) +
+        labs(title = paste("Przed:", var),
+             x = "Czas", y = "Wartość") +
+        theme_minimal() +
+        theme(plot.title = element_text(size = 10))
+      
+      plots_before[[var]] <- plot_before
+    }
+    
+    if (var %in% non_stationary_vars) {
+      
+      for (i in 0:max_diff) {
+        test_series <- if (i == 0) series else diff(series, differences = i)
+        
+        # Test ADF
+        adf <- ur.df(test_series, type = "trend", selectlags = "AIC")
+        adf_stat <- adf@teststat[1]
+        adf_crit <- adf@cval[1, "5pct"]
+        adf_stationary <- adf_stat < adf_crit
+        
+        # Test KPSS
+        kpss_stationary <- tryCatch({
+          kpss.test(test_series)$p.value > 0.05
+        }, error = function(e) TRUE)
+        
+        
+        if (adf_stationary && kpss_stationary) {
+          order <- i
+          break
+        }
+      }
+      current_series <- if (order > 0) diff(series, differences = order) else series
+    }
+    
+    # Nazwa zmiennej po transformacji
+    name <- if (order > 0) paste0("D", if(order > 1) order else "", "_", var) else var
+    diff_orders[[var]] <- list(order = order, name = name)
+    transformed_data[[name]] <- current_series
+    
+    # Wykres po transformacji
+    if (show_plots) {
+      df_plot_after <- data.frame(
+        Index = 1:length(current_series),
+        Value = as.numeric(current_series)
+      )
+      
+      plot_after <- ggplot(df_plot_after, aes(x = Index, y = Value)) +
+        geom_line(color = "red", size = 0.7) +
+        labs(title = paste("Po:", name),
+             x = "Czas", y = "Wartość") +
+        theme_minimal() +
+        theme(plot.title = element_text(size = 10))
+      
+      plots_after[[var]] <- plot_after
+    }
+  }
+  
+  # Wyrównaj długości (NA na początku)
+  max_lag <- max(sapply(diff_orders, function(x) x$order))
+  for (name in names(transformed_data)) {
+    series <- transformed_data[[name]]
+    if (length(series) < nrow(data)) {
+      padded <- c(rep(NA, nrow(data) - length(series)), series)
+      transformed_data[[name]] <- padded
+    }
+  }
+  
+  df <- as.data.frame(transformed_data)
+  df <- df[complete.cases(df), ]
+  
+  # Wyświetl wykresy porównawcze
+  if (show_plots && length(plots_before) > 0) {
+    
+    
+    # Grupuj wykresy po 2 w rzędzie (przed i po)
+    for (var in names(plots_before)) {
+      combined_plot <- arrangeGrob(
+        plots_before[[var]], 
+        plots_after[[var]], 
+        ncol = 2,
+        top = textGrob(paste("Porównanie transformacji dla zmiennej:", var))
+      )
+      
+      # Wyświetl wykres
+      grid.newpage()
+      grid.draw(combined_plot)
+ 
+    }
+  }
+  
+  return(list(
+    data = df, 
+    diff_info = diff_orders,
+    plots_before = plots_before,
+    plots_after = plots_after
+  ))
+}
+
+# Funkcja pomocnicza do wyświetlania wszystkich wykresów na raz
+show_all_plots <- function(result, ncol = 2) {
+  plots_before <- result$plots_before
+  plots_after <- result$plots_after
+  
+  all_plots <- list()
+  for (var in names(plots_before)) {
+    all_plots <- append(all_plots, list(plots_before[[var]], plots_after[[var]]))
+  }
+  
+  if (length(all_plots) > 0) {
+    combined <- do.call(arrangeGrob, c(all_plots, list(ncol = ncol)))
+    grid.newpage()
+    grid.draw(combined)
+  }
+}
+```
+
+```{r wywołanie_funkcji_z_wykresami,  warning=FALSE, message=FALSE, echo=FALSE, , include=FALSE}
+# Wywołanie funkcji z wykresami
+result <- remove_nonstationarity_with_plots(data, non_stationary_vars, show_plots = TRUE)
+
+data_stationary <- result$data
+diff_info <- result$diff_info
+
+# Wyświetlenie informacji o różnicowaniu
+cat("\n=== INFORMACJE O TRANSFORMACJACH ===\n")
+for (var in names(diff_info)) {
+  info <- diff_info[[var]]
+  cat(var, "-> różnicowana", info$order, "razy, nowa nazwa:", info$name, "\n")
+}
+
+```
+
+
