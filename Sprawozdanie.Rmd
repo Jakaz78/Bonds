@@ -70,12 +70,14 @@ X <- data[,c("INFLATION","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT",
 ```{r}
 summary(Y)
 ```
+Wartości zmiennej objaśnianej wachają się pomiędzy 13,288 a 1,149. Mediana wynosi 5,461 a średnia 5,347. 
 
 ## Zmienne objaśniające
 
 ```{r}
 summary(X)
 ```
+Z 11 zmiennych objaśniających wybrałem 8, których wartość bezwględna korelacji nie przekracza 0.7.
 
 ## Macierz korelacji
 
@@ -138,24 +140,7 @@ for (var in non_stationary_vars) {
 ## Usunięcie niestacjonarności
 
 
-```{r usuwanie_niestacjonarnosci, warning=FALSE, message=FALSE, echo=FALSE }
-is_stationary_test <- function(series) {
-  if (length(series) < 5) return(FALSE)
-
-  adf_result <- tryCatch({
-    adf <- ur.df(series, type = "trend", selectlags = "AIC")
-    adf_stat <- adf@teststat[1]
-    adf_crit <- adf@cval[1, "5pct"]
-    adf_stat < adf_crit
-  }, error = function(e) FALSE)
-
-  kpss_result <- tryCatch({
-    kpss <- kpss.test(series)
-    kpss$p.value > 0.05
-  }, error = function(e) FALSE)
-
-  return(adf_result && kpss_result)
-}
+```{r usuwanie_niestacjonarnosci, warning=FALSE, message=FALSE, echo=FALSE, comment = NA }
 
 remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, show_plots = TRUE) {
   transformed_data <- list()
@@ -274,7 +259,7 @@ show_all_plots <- function(result, ncol = 2) {
 
 
 
-```{r wywołanie_funkcji, echo=FALSE, warning=FALSE, message=FALSE}
+```{r wywołanie_funkcji, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 
 non_stationary_vars <- c()
 
@@ -295,10 +280,9 @@ for (var in names(diff_info)) {
 }
 ```
 
-## Ponowne sprawdzenie stacjonarności zmiennych
+## Ponowne sprawdzenie stacjonarności zmiennych 
 
-```{r sprawdzenie_zmienncyh, echo=FALSE, warning=FALSE, message=FALSE}
-cat("--- Sprawdzenie stacjonarności zmiennych po transformacji ---\n")
+```{r sprawdzenie_zmienncyh, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 for (var in colnames(data_stationary)) {
   series_transformed <- ts(data_stationary[[var]])
   if (is_stationary_test(series_transformed)) {
@@ -309,191 +293,98 @@ for (var in colnames(data_stationary)) {
 }
 ```
 
-## Usunięcie zmiennych o zerowej wariancji
+## Usunięcie zmiennych o zerowej wariancji ogolnie taki jest podupunkt u \
+## tory ale nie usuwalem nic tylko wypisalem 
+
+```{r , echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
+for (col_name in colnames(data_stationary)) {
+  
+      col_cv <- sd(data_stationary[[col_name]]) / mean(data_stationary[[col_name]]) * 100
+      col_var <- var(data_stationary[[col_name]])
+      cat(col_name, "- Współczynnik zmienności:", col_cv, "%, Wariancja: ", col_var,"\n")
+    }
+```
 
 # Metoda doboru zmiennych
 
 ## Metoda Hellwiga
 
-```{r}
-
-
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Teściwo
-
-```{r usuwanie_niestacjonarnosci_z_wykresami, warning=FALSE, message=FALSE, echo=FALSE, , include=FALSE}
-
-
-remove_nonstationarity_with_plots <- function(data, non_stationary_vars, max_diff = 2, show_plots = TRUE) {
-  transformed_data <- list()
-  diff_orders <- list()
+```{r , echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
+hellwig_method_original <- function(y, X) {
+  all_vars <- colnames(X)
+  R <- cor(cbind(y, X))
+  r0 <- R[-1, 1]        
+  Rxx <- R[-1, -1]      
+  results <- list()
   
-  # Lista do przechowywania wykresów
-  plots_before <- list()
-  plots_after <- list()
-  
-  for (var in colnames(data)) {
-    series <- data[[var]]
-    order <- 0
-    current_series <- series
+  for (k in 1:length(all_vars)) {
+    combos <- combn(all_vars, k, simplify = FALSE)
     
-    # Wykres przed transformacją
-    if (show_plots) {
-      df_plot <- data.frame(
-        Index = 1:length(series),
-        Value = as.numeric(series)
-      )
+    for (combo in combos) {
+      indices <- match(combo, all_vars)
+      r0_sub <- r0[indices]
+      Rxx_sub <- Rxx[indices, indices]
       
-      plot_before <- ggplot(df_plot, aes(x = Index, y = Value)) +
-        geom_line(color = "blue", size = 0.7) +
-        labs(title = paste("Przed:", var),
-             x = "Czas", y = "Wartość") +
-        theme_minimal() +
-        theme(plot.title = element_text(size = 10))
+      h_kj <- numeric(length(indices))
       
-      plots_before[[var]] <- plot_before
-    }
-    
-    if (var %in% non_stationary_vars) {
-      
-      for (i in 0:max_diff) {
-        test_series <- if (i == 0) series else diff(series, differences = i)
-        
-        # Test ADF
-        adf <- ur.df(test_series, type = "trend", selectlags = "AIC")
-        adf_stat <- adf@teststat[1]
-        adf_crit <- adf@cval[1, "5pct"]
-        adf_stationary <- adf_stat < adf_crit
-        
-        # Test KPSS
-        kpss_stationary <- tryCatch({
-          kpss.test(test_series)$p.value > 0.05
-        }, error = function(e) TRUE)
-        
-        
-        if (adf_stationary && kpss_stationary) {
-          order <- i
-          break
+      for (j in seq_along(indices)) {
+        if (length(indices) == 1) {
+          denom <- 1  
+        } else {
+          denom <- 1 + sum(abs(Rxx_sub[j, -j]))
         }
+        h_kj[j] <- (r0_sub[j]^2) / denom
       }
-      current_series <- if (order > 0) diff(series, differences = order) else series
-    }
-    
-    # Nazwa zmiennej po transformacji
-    name <- if (order > 0) paste0("D", if(order > 1) order else "", "_", var) else var
-    diff_orders[[var]] <- list(order = order, name = name)
-    transformed_data[[name]] <- current_series
-    
-    # Wykres po transformacji
-    if (show_plots) {
-      df_plot_after <- data.frame(
-        Index = 1:length(current_series),
-        Value = as.numeric(current_series)
-      )
       
-      plot_after <- ggplot(df_plot_after, aes(x = Index, y = Value)) +
-        geom_line(color = "red", size = 0.7) +
-        labs(title = paste("Po:", name),
-             x = "Czas", y = "Wartość") +
-        theme_minimal() +
-        theme(plot.title = element_text(size = 10))
-      
-      plots_after[[var]] <- plot_after
+      H_k <- sum(h_kj)
+      results[[paste(combo, collapse = ", ")]] <- H_k
     }
   }
   
-  # Wyrównaj długości (NA na początku)
-  max_lag <- max(sapply(diff_orders, function(x) x$order))
-  for (name in names(transformed_data)) {
-    series <- transformed_data[[name]]
-    if (length(series) < nrow(data)) {
-      padded <- c(rep(NA, nrow(data) - length(series)), series)
-      transformed_data[[name]] <- padded
-    }
-  }
+  df <- data.frame(
+    Zmienne = names(results),
+    Pojemnosc_Hellwiga = round(unlist(results), 4),
+    row.names = NULL
+  )
   
-  df <- as.data.frame(transformed_data)
-  df <- df[complete.cases(df), ]
-  
-  # Wyświetl wykresy porównawcze
-  if (show_plots && length(plots_before) > 0) {
-    
-    
-    # Grupuj wykresy po 2 w rzędzie (przed i po)
-    for (var in names(plots_before)) {
-      combined_plot <- arrangeGrob(
-        plots_before[[var]], 
-        plots_after[[var]], 
-        ncol = 2,
-        top = textGrob(paste("Porównanie transformacji dla zmiennej:", var))
-      )
-      
-      # Wyświetl wykres
-      grid.newpage()
-      grid.draw(combined_plot)
- 
-    }
-  }
-  
-  return(list(
-    data = df, 
-    diff_info = diff_orders,
-    plots_before = plots_before,
-    plots_after = plots_after
-  ))
+  df <- df[order(-df$Pojemnosc_Hellwiga), ]
+  return(df)
 }
-
-# Funkcja pomocnicza do wyświetlania wszystkich wykresów na raz
-show_all_plots <- function(result, ncol = 2) {
-  plots_before <- result$plots_before
-  plots_after <- result$plots_after
-  
-  all_plots <- list()
-  for (var in names(plots_before)) {
-    all_plots <- append(all_plots, list(plots_before[[var]], plots_after[[var]]))
-  }
-  
-  if (length(all_plots) > 0) {
-    combined <- do.call(arrangeGrob, c(all_plots, list(ncol = ncol)))
-    grid.newpage()
-    grid.draw(combined)
-  }
-}
+X_stat <- data_stationary[, -1]         
+Y_stat <- data_stationary["D_CLOSE"]    
+hellwig_result <- hellwig_method_original(Y_stat, X_stat)
 ```
 
-```{r wywołanie_funkcji_z_wykresami,  warning=FALSE, message=FALSE, echo=FALSE, , include=FALSE}
-# Wywołanie funkcji z wykresami
-result <- remove_nonstationarity_with_plots(data, non_stationary_vars, show_plots = TRUE)
 
-data_stationary <- result$data
-diff_info <- result$diff_info
+```{r, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 
-# Wyświetlenie informacji o różnicowaniu
-cat("\n=== INFORMACJE O TRANSFORMACJACH ===\n")
-for (var in names(diff_info)) {
-  info <- diff_info[[var]]
-  cat(var, "-> różnicowana", info$order, "razy, nowa nazwa:", info$name, "\n")
+cat("\nZmienne składowe w najlepszej kombinacji:\n")
+for (zmienna in unlist(strsplit(hellwig_result$Zmienne[1], ", "))) {
+  cat(zmienna, "\n")
 }
-
+cat("Pojemność Hellwiga dla tej kombinacji:", hellwig_result$Pojemnosc_Hellwiga[1], "\n")
 ```
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# TEST
+```{r, warning=FALSE, message=FALSE, fig.height=5, fig.width=7, fig.align='center', echo=FALSE}
+
+```
 
