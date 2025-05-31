@@ -25,22 +25,22 @@ header-includes:
 
 ## Opis projektu
 
-cos tam cos tam
+Projekt ma na celu budowę kompleksowego modelu ekonometrycznego służącego do analizy i prognozowania rentowności 10-letnich polskich obligacji skarbowych. Model zostanie zbudowany na podstawie szeregów czasowych, co umożliwia głębszą analizę dynamicznych zależności ekonomicznych.
 
 ## Zmienna objaśniana
 
-CLOSE - zmienna objasniana bedzie rentownosc 10-letnich polskich obligacji skarbowcyh
+**CLOSE** - rentowność 10-letnich polskich obligacji skarbowych
 
 ## Zmienne objaśniające
 
-XAUUSD - cena złota w dolarze amerykańskim\
-S&P500 - ETF 500 największych notowanych na giełdzie amerykańskich spółek\
-PMI - cos tam\
-WIG20 - 20 najwiekszych notowanych na gieldzie polskich spolek\
-OIL - cena ropy naftowej za barylke\
-UNEMPLOYMENT - stopa bezrobocia w Polsce\
-USDPLN - kurs dolara amerykańskiego wyrażony w złotych\
-INFLATION - inflacja r/r wobec miesiąca odpowiadającego z roku temu\
+**XAUUSD** - cena złota w dolarze amerykańskim\
+**S&P500** - ETF 500 największych notowanych na giełdzie amerykańskich spółek\
+**PMI** - wskaźnik aktywności przemysłowej\
+**WIG20** - 20 najwiekszych notowanych na gieldzie polskich spolek\
+**OIL** - cena ropy naftowej za barylke\
+**UNEMPLOYMENT** - stopa bezrobocia w Polsce\
+**USDPLN** - kurs dolara amerykańskiego wyrażony w złotych\
+**INFLATION** - inflacja rok do roku\
 
 ## Źródła
 
@@ -97,13 +97,15 @@ X <- data[,c("INFLATION","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT",
 ```{r , echo=FALSE}
 summary(Y)
 ```
-Wartości zmiennej objaśnianej wachają się pomiędzy 13,288 a 1,149. Mediana wynosi 5,461 a średnia 5,347. 
+
+Wartości zmiennej objaśnianej wachają się pomiędzy 13,288 a 1,149. Mediana wynosi 5,461 a średnia 5,347.
 
 ## Zmienne objaśniające
 
 ```{r , echo=FALSE}
 summary(X)
 ```
+
 Z 11 zmiennych objaśniających wybrałem 8, których wartość bezwględna korelacji nie przekracza 0.7.
 
 ## Macierz korelacji
@@ -113,7 +115,7 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
 
 
     corrplot(cor_matrix, method = "color",
-           order = "hclust",
+           order = "alphabet",
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
@@ -124,44 +126,39 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
 
 ```{r analiza_stacjonarnosci, warning=FALSE, message=FALSE, echo=FALSE}
 
-is_stationary_test <- function(series) {
-
-  adf_result <- {
-    adf <- ur.df(series, type = "trend", selectlags = "AIC")
-    adf_stat <- adf@teststat[1]
-    adf_crit <- adf@cval[1, "5pct"]
-    adf_stat < adf_crit
-  }
-
-  kpss_result <- {
-    kpss <- kpss.test(series)
-    kpss$p.value > 0.05
-  }
-
-  return(adf_result && kpss_result)
+check_stationarity <- function(x) {
+  adf_test <- ur.df(x, type = "trend")@teststat[1] < ur.df(x, type = "trend")@cval[1,"5pct"]
+  kpss_test <- kpss.test(x)$p.value > 0.05
+  return(adf_test & kpss_test)
 }
-
 
 non_stationary_vars <- c()
 
-
 for (var in colnames(data)) {
   series <- ts(data[[var]])
-
-  if (!is_stationary_test(series)) {
+  if (!check_stationarity(series)) {
     non_stationary_vars <- c(non_stationary_vars, var)
   }
-
 }
+
 ```
 
 ## Sprawdzenie niestacjonarności zmiennych
 
-```{r , echo=FALSE, comment=NA}
-cat("Zidentyfikowane zmienne niestacjonarne:")
-for (var in non_stationary_vars) {
-  writeLines(var)
-}
+```{r , echo=FALSE, comment=NA, warning=FALSE, message=FALSE}
+stationarity_df <- data.frame(
+  Zmienna = colnames(data),
+  Stacjonarnosc = sapply(data, function(col) {
+    if (check_stationarity(ts(col))) {
+      return("Stacjonarna")
+    } else {
+      return("Niestacjonarna")
+    }
+  })
+)
+
+
+knitr::kable(stationarity_df, row.names = FALSE)
 
 ```
 
@@ -189,14 +186,14 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2,
     order <- 0
 
     if (var_name %in% non_stationary_vars) {
-      for (i in 0:max_diff) {
+      for (i in 1:max_diff) {
         test_series <- if (i == 0) original_series else diff(original_series, differences = i)
 
-        if (is_stationary_test(test_series)) {
-          order <- i
-          current_series <- test_series
-          break
-        }
+        if (check_stationarity(test_series)) {
+         order <- i
+         current_series <- test_series
+         break
+       }
 
         if (i == max_diff) {
           order <- max_diff
@@ -205,9 +202,13 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2,
       }
     }
 
-    new_name <- if (order > 0) paste0("D", if(order > 1) order else "", "_", var_name) else var_name
-    diff_info[[var_name]] <- list(order = order, name = new_name)
-    transformed_data[[new_name]] <- current_series
+   new_name <- if (order > 0) {
+     paste0("D", if(order > 1) order else "", "_", var_name)} else {
+     var_name
+   }
+   
+   diff_info[[var_name]] <- list(order = order, name = new_name)
+   transformed_data[[new_name]] <- current_series
 
     if (show_plots || save_plots) {
       df_plot_before <- data.frame(Index = 1:length(original_series), Value = as.numeric(original_series))
@@ -255,17 +256,13 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2,
 
 ```
 
-
 ```{r wywołanie_funkcji, echo=FALSE, warning=FALSE, message=FALSE, comment=NA, fig.align='center', fig.width=10, fig.height=6}
-
-library(gridExtra)
-library(grid)
 
 non_stationary_vars <- c()
 
 for (var in colnames(data)) {
   series <- ts(data[[var]])
-  if (!is_stationary_test(series)) {
+  if (!check_stationarity(series)) {
     non_stationary_vars <- c(non_stationary_vars, var)
   }
 }
@@ -287,33 +284,33 @@ for (var in names(diff_info)) {
   plot_before <- plots_before[[var]]
   plot_after <- plots_after[[var]]
   
-  # 1. Tworzymy layout: wykresy w 1 rzędzie
   gridExtra::grid.arrange(
     plot_before, plot_after,
     ncol = 2,
     top = NULL
   )
-  
 }
 ```
 
-## Ponowne sprawdzenie niestacjonarności zmiennych 
+## Ponowne sprawdzenie niestacjonarności zmiennych
 
 ```{r sprawdzenie_zmienncyh, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
-for (var in colnames(data_stationary)) {
-  series_transformed <- ts(data_stationary[[var]])
-  if (is_stationary_test(series_transformed)) {
-    cat(var, ": Stacjonarna\n")
-  } else {
-    cat(var, ": Niestacjonarna")
-  }
-}
+stationarity_df <- data.frame(
+  Zmienna = colnames(data_stationary),
+  Stacjonarnosc = sapply(data_stationary, function(col) {
+    if (check_stationarity(ts(col))) {
+      return("Stacjonarna")
+    } else {
+      return("Niestacjonarna")
+    }
+  })
+)
+
+
+knitr::kable(stationarity_df, row.names = FALSE)
 ```
 
-## Usunięcie zmiennych o zerowej wariancji 
-
-### ogolnie taki jest podupunkt u \
-### tory ale nie usuwalem nic tylko wypisalem 
+## Usunięcie zmiennych o zerowej wariancji
 
 ```{r , echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 for (col_name in colnames(data_stationary)) {
@@ -341,6 +338,7 @@ for (col_name in colnames(data_stationary)) {
       cat(col_name, "- Współczynnik zmienności:", col_cv, "%, Wariancja: ", col_var,"\n")
 }
 ```
+
 \newpage
 
 # Metoda doboru zmiennych
@@ -393,13 +391,30 @@ Y_stat <- data_stationary["D_CLOSE"]
 hellwig_result <- hellwig_method_original(Y_stat, X_stat)
 ```
 
-
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
-
+najlepsza_kombinacja_string <- hellwig_result$Zmienne[1]
+best_hellwig_vars <- unlist(strsplit(najlepsza_kombinacja_string, ", "))
 cat("Zmienne składowe w najlepszej kombinacji:\n")
-for (zmienna in unlist(strsplit(hellwig_result$Zmienne[1], ", "))) {
+for (zmienna in best_hellwig_vars) {
   writeLines(zmienna)
 }
 cat("Pojemność Hellwiga dla tej kombinacji:", hellwig_result$Pojemnosc_Hellwiga[1], "\n")
+
+zmienne_objaśniające_do_modelu <- unlist(strsplit(najlepsza_kombinacja_string, ", "))
+
+
+
 ```
 
+# Tworzenie modelu ekonometrycznego
+
+```{r message=FALSE, comment=NA}
+
+formula_modelu <- reformulate(best_hellwig_vars, response = "D_CLOSE")
+
+model <- lm(formula_modelu, data = data_stationary)
+
+print(summary(model))
+```
+
+H0 takie ze ... p wynoszace xyz oznacza...
