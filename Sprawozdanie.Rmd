@@ -87,14 +87,14 @@ X <- data[,c("INFLATION","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT",
 
 ## Zmienna objaśniana
 
-```{r}
+```{r , echo=FALSE}
 summary(Y)
 ```
 Wartości zmiennej objaśnianej wachają się pomiędzy 13,288 a 1,149. Mediana wynosi 5,461 a średnia 5,347. 
 
 ## Zmienne objaśniające
 
-```{r}
+```{r , echo=FALSE}
 summary(X)
 ```
 Z 11 zmiennych objaśniających wybrałem 8, których wartość bezwględna korelacji nie przekracza 0.7.
@@ -110,6 +110,8 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
+
+\newpage
 
 # Identyfikacja niestacjonarnych zmiennych objaśniających
 
@@ -146,9 +148,10 @@ for (var in colnames(data)) {
 }
 ```
 
-## Zidentyfikowane zmienne niestacjonarne:
+## Sprawdzenie niestacjonarności zmiennych
 
 ```{r , echo=FALSE, comment=NA}
+cat("Zidentyfikowane zmienne niestacjonarne:")
 for (var in non_stationary_vars) {
   writeLines(var)
 }
@@ -287,7 +290,7 @@ for (var in names(diff_info)) {
 }
 ```
 
-## Ponowne sprawdzenie stacjonarności zmiennych 
+## Ponowne sprawdzenie niestacjonarności zmiennych 
 
 ```{r sprawdzenie_zmienncyh, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 for (var in colnames(data_stationary)) {
@@ -313,6 +316,8 @@ for (col_name in colnames(data_stationary)) {
       cat(col_name, "- Współczynnik zmienności:", col_cv, "%, Wariancja: ", col_var,"\n")
     }
 ```
+
+\newpage
 
 # Metoda doboru zmiennych
 
@@ -367,7 +372,7 @@ hellwig_result <- hellwig_method_original(Y_stat, X_stat)
 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 
-cat("\nZmienne składowe w najlepszej kombinacji:\n")
+cat("Zmienne składowe w najlepszej kombinacji:\n")
 for (zmienna in unlist(strsplit(hellwig_result$Zmienne[1], ", "))) {
   writeLines(zmienna)
 }
