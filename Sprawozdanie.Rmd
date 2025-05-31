@@ -1,8 +1,24 @@
 ---
 title: "Sprawozdanie"
 author: "Jakub Kaźmierczyk"
-date: "2025-05-29"
-output: pdf_document
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    latex_engine: xelatex
+    highlight: tango
+fontsize: 11pt
+mainfont: "Times New Roman"
+geometry: margin=2.5cm
+linestretch: 1.5
+lang: "pl"
+header-includes:
+  - \renewcommand{\contentsname}{Spis treści}
+  - \usepackage{fancyhdr}
+  - \pagestyle{fancy}
+  - \fancyhf{}
+  - \cfoot{\thepage}
 ---
 
 # Wprowadzenie
@@ -30,6 +46,10 @@ INFLATION - inflacja r/r wobec miesiąca odpowiadającego z roku temu\
 
 [www.stooq.com](https://stooq.pl)\
 
+\newpage
+
+# Wczytywanie danych
+
 ```{r setup, echo=FALSE, warning=FALSE, message = FALSE}
 library(corrplot)
 library(readxl)
@@ -46,8 +66,6 @@ library(grid)
 
 ```
 
-# Wczytywanie danych
-
 ```{r}
 data <- read_excel("data.xlsx")
 
@@ -62,6 +80,8 @@ Y <- data["CLOSE"]
 X <- data[,c("INFLATION","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT",
              "PMI","OIL")]
 ```
+
+\newpage
 
 # Podstawowe statystyki
 
@@ -93,7 +113,7 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
 
 # Identyfikacja niestacjonarnych zmiennych objaśniających
 
-```{r analiza_stacjonarnosci, warning=FALSE, message=FALSE, fig.height=5, fig.width=7, fig.align='center', echo=FALSE}
+```{r analiza_stacjonarnosci, warning=FALSE, message=FALSE, echo=FALSE}
 
 is_stationary_test <- function(series) {
 
@@ -128,21 +148,26 @@ for (var in colnames(data)) {
 
 ## Zidentyfikowane zmienne niestacjonarne:
 
-```{r , echo=FALSE,comment = NA}
+```{r , echo=FALSE, comment=NA}
 for (var in non_stationary_vars) {
-  cat(var, "\n")
+  writeLines(var)
 }
 
 ```
 
-
-
 ## Usunięcie niestacjonarności
 
+```{r usuwanie_niestacjonarnosci, message=FALSE, echo=FALSE, comment = NA }
 
-```{r usuwanie_niestacjonarnosci, warning=FALSE, message=FALSE, echo=FALSE, comment = NA }
+dir.create("plots", showWarnings = FALSE)
 
-remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, show_plots = TRUE) {
+remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, 
+                                   show_plots = TRUE, save_plots = FALSE, 
+                                   plot_dir = "plots") {
+  if (save_plots && !dir.exists(plot_dir)) {
+    dir.create(plot_dir, recursive = TRUE)
+  }
+
   transformed_data <- list()
   diff_info <- list()
   plots_before <- list()
@@ -152,22 +177,6 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, show
     original_series <- data[[var_name]]
     current_series <- original_series
     order <- 0
-
-    if (show_plots) {
-      df_plot_before <- data.frame(
-        Index = 1:length(original_series),
-        Value = as.numeric(original_series)
-      )
-
-      plot_before <- ggplot(df_plot_before, aes(x = Index, y = Value)) +
-        geom_line(color = "blue", size = 0.7) +
-        labs(title = paste("Przed:", var_name),
-             x = "Czas", y = "Wartość") +
-        theme_minimal() +
-        theme(plot.title = element_text(size = 10, face = "bold"))
-
-      plots_before[[var_name]] <- plot_before
-    }
 
     if (var_name %in% non_stationary_vars) {
       for (i in 0:max_diff) {
@@ -190,21 +199,33 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, show
     diff_info[[var_name]] <- list(order = order, name = new_name)
     transformed_data[[new_name]] <- current_series
 
-    if (show_plots) {
-      df_plot_after <- data.frame(
-        Index = 1:length(current_series),
-        Value = as.numeric(current_series)
-      )
+    if (show_plots || save_plots) {
+      df_plot_before <- data.frame(Index = 1:length(original_series), Value = as.numeric(original_series))
+      df_plot_after  <- data.frame(Index = 1:length(current_series), Value = as.numeric(current_series))
 
-      plot_after <- ggplot(df_plot_after, aes(x = Index, y = Value)) +
-        geom_line(color = "red", size = 0.7) +
-        labs(title = paste("Po:", new_name),
-             x = "Czas", y = "Wartość") +
+      plot_before <- ggplot(df_plot_before, aes(x = Index, y = Value)) +
+        geom_line(color = "blue", size = 0.7) +
+        labs(title = paste("Przed:", var_name, var, "Liczba różnicowań: ",order), x = "Czas", y = "Wartość") +
         theme_minimal() +
         theme(plot.title = element_text(size = 10, face = "bold"))
 
+      plot_after <- ggplot(df_plot_after, aes(x = Index, y = Value)) +
+        geom_line(color = "red", size = 0.7) +
+        labs(title = paste("Po:", new_name), x = "Czas", y = "Wartość") +
+        theme_minimal() +
+        theme(plot.title = element_text(size = 10, face = "bold"))
+
+      plots_before[[var_name]] <- plot_before
       plots_after[[var_name]] <- plot_after
+
+      if (save_plots) {
+        ggsave(filename = file.path(plot_dir, paste0("before_", var_name, ".png")),
+               plot = plot_before, width = 6, height = 4, dpi = 300)
+        ggsave(filename = file.path(plot_dir, paste0("after_", new_name, ".png")),  # <-- poprawione
+               plot = plot_after, width = 6, height = 4, dpi = 300)
+      }
     }
+    
   }
 
   max_diff_order <- max(sapply(diff_info, function(x) x$order))
@@ -212,22 +233,7 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, show
   final_df <- as.data.frame(lapply(transformed_data, function(x) {
     c(rep(NA, max_diff_order), x)[1:(nrow(data) + max_diff_order)]
   }))
-
   final_df <- final_df[complete.cases(final_df), ]
-
-  if (show_plots && length(plots_before) > 0) {
-    for (var_name in names(plots_before)) {
-      if (var_name %in% names(plots_after)) {
-          combined_plot <- arrangeGrob(
-            plots_before[[var_name]],
-            plots_after[[var_name]],
-            ncol = 2
-          )
-          grid.newpage()
-          grid.draw(combined_plot)
-      }
-    }
-  }
 
   return(list(
     data = final_df,
@@ -237,29 +243,13 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2, show
   ))
 }
 
-show_all_plots <- function(result, ncol = 2) {
-  plots_before <- result$plots_before
-  plots_after <- result$plots_after
-
-  all_plots <- list()
-  for (var_name in names(plots_before)) {
-    if (!is.null(plots_before[[var_name]]) && !is.null(plots_after[[var_name]])) {
-      all_plots <- append(all_plots, list(plots_before[[var_name]], plots_after[[var_name]]))
-    }
-  }
-
-  if (length(all_plots) > 0) {
-    num_rows <- ceiling(length(all_plots) / ncol)
-    combined <- do.call(arrangeGrob, c(all_plots, list(ncol = ncol)))
-    grid.newpage()
-    grid.draw(combined)
-  }
-}
 ```
 
 
+```{r wywołanie_funkcji, echo=FALSE, warning=FALSE, message=FALSE, comment=NA, fig.align='center', fig.width=10, fig.height=6}
 
-```{r wywołanie_funkcji, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
+library(gridExtra)
+library(grid)
 
 non_stationary_vars <- c()
 
@@ -270,13 +260,30 @@ for (var in colnames(data)) {
   }
 }
 
-result <- remove_nonstationarity(data, non_stationary_vars)
+result <- remove_nonstationarity(
+  data,
+  non_stationary_vars,
+  save_plots = TRUE,
+  show_plots = FALSE
+)
+
 data_stationary <- result$data
 diff_info <- result$diff_info
+plots_before <- result$plots_before
+plots_after <- result$plots_after
 
 for (var in names(diff_info)) {
   info <- diff_info[[var]]
-  cat(var, "-> różnicowana", info$order, "razy, nowa nazwa:", info$name, "\n")
+  plot_before <- plots_before[[var]]
+  plot_after <- plots_after[[var]]
+  
+  # 1. Tworzymy layout: wykresy w 1 rzędzie
+  gridExtra::grid.arrange(
+    plot_before, plot_after,
+    ncol = 2,
+    top = NULL
+  )
+  
 }
 ```
 
@@ -293,8 +300,10 @@ for (var in colnames(data_stationary)) {
 }
 ```
 
-## Usunięcie zmiennych o zerowej wariancji ogolnie taki jest podupunkt u \
-## tory ale nie usuwalem nic tylko wypisalem 
+## Usunięcie zmiennych o zerowej wariancji 
+
+### ogolnie taki jest podupunkt u \
+### tory ale nie usuwalem nic tylko wypisalem 
 
 ```{r , echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 for (col_name in colnames(data_stationary)) {
@@ -360,31 +369,8 @@ hellwig_result <- hellwig_method_original(Y_stat, X_stat)
 
 cat("\nZmienne składowe w najlepszej kombinacji:\n")
 for (zmienna in unlist(strsplit(hellwig_result$Zmienne[1], ", "))) {
-  cat(zmienna, "\n")
+  writeLines(zmienna)
 }
 cat("Pojemność Hellwiga dla tej kombinacji:", hellwig_result$Pojemnosc_Hellwiga[1], "\n")
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# TEST
-```{r, warning=FALSE, message=FALSE, fig.height=5, fig.width=7, fig.align='center', echo=FALSE}
-
 ```
 
