@@ -63,15 +63,17 @@ library(tidyr)
 library(zoo)
 library(gridExtra)
 library(grid)
+library(lmtest)       
+library(car)          
+library(nortest)    
+library(sandwich)     
+library(strucchange)  
 
 ```
 
 ```{r}
 data_all <- read_excel("data.xlsx")
-
-data_all <- data_all[, c("CLOSE", "INFLATION", "XAUUSD", "USDPLN", "WIG20", "S&P500", 
-                 "UNEMPLOYMENT", "PMI", "OIL")]
-
+data_all <- data_all[, -c(1, 3, 4)]
 data_all[] <- lapply(data_all, function(col) {
   na.approx(col, na.rm = FALSE)
 })
@@ -81,11 +83,10 @@ n <- nrow(data_all)
 train_size <- floor(0.8 * n)
 
 data <- data_all[1:train_size, , drop = FALSE]
-data_test  <- data_all[(train_size + 1):n, , drop = FALSE]
+
 
 Y <- data["CLOSE"]
-X <- data[,c("INFLATION","XAUUSD", "USDPLN","WIG20","S&P500","UNEMPLOYMENT",
-             "PMI","OIL")]
+X <- data[, !names(data) %in% "CLOSE", drop = FALSE]
 ```
 
 \newpage
@@ -106,7 +107,7 @@ Wartości zmiennej objaśnianej wachają się pomiędzy 13,288 a 1,149. Mediana 
 summary(X)
 ```
 
-Z 11 zmiennych objaśniających wybrałem 8, których wartość bezwględna korelacji nie przekracza 0.7.
+
 
 ## Macierz korelacji
 
@@ -119,7 +120,26 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
+Z 11 zmiennych objaśniających wybrałem 8, których wartość bezwględna korelacji nie przekracza 0.7.
 
+\newpage
+
+```{r corrplot2, fig.width=20, fig.height=20, echo=FALSE}
+
+data_all <- data_all[, c("CLOSE", "INFLATION", "XAUUSD", "USDPLN", "WIG20", "S&P500", 
+                 "UNEMPLOYMENT", "PMI", "OIL")]
+data <- data_all[1:train_size, , drop = FALSE]
+data_test  <- data_all[(train_size + 1):n, , drop = FALSE]
+
+
+cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
+
+
+    corrplot(cor_matrix, method = "color",
+           order = "alphabet",
+           addCoef.col = "black", 
+           tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
+```
 \newpage
 
 # Identyfikacja niestacjonarnych zmiennych objaśniających
@@ -406,6 +426,8 @@ zmienne_objaśniające_do_modelu <- unlist(strsplit(najlepsza_kombinacja_string,
 
 ```
 
+\newpage 
+
 # Tworzenie modelu ekonometrycznego
 
 ```{r message=FALSE, comment=NA}
@@ -418,3 +440,436 @@ print(summary(model))
 ```
 
 H0 takie ze ... p wynoszace xyz oznacza...
+
+
+
+
+
+
+
+
+
+
+
+
+
+\newpage
+
+
+# Niby TEST
+
+```{r, echo=FALSE}
+
+# ==============================================================================
+# 2. WERYFIKACJA POPRAWNOŚCI MODELU
+# ==============================================================================
+
+# Funkcja do tworzenia sekcji wyników
+print_test_header <- function(title) {
+  cat("\n", paste(rep("=", 60), collapse=""), "\n")
+  cat(paste("   ", title), "\n")
+  cat(paste(rep("=", 60), collapse=""), "\n")
+}
+
+# Przygotowanie reszt
+residuals_model <- residuals(model)
+fitted_values <- fitted(model)
+n_obs <- length(residuals_model)
+n_params <- length(coef(model))
+
+# ==============================================================================
+# 2.1 BADANIE NORMALNOŚCI ROZKŁADU RESZT
+# ==============================================================================
+
+print_test_header("BADANIE NORMALNOŚCI ROZKŁADU RESZT")
+
+cat("TEORIA: Testy normalności sprawdzają czy reszty mają rozkład normalny.\n")
+cat("H0: Reszty mają rozkład normalny\n")
+cat("H1: Reszty nie mają rozkładu normalnego\n")
+cat("Poziom istotności: α = 0.05\n\n")
+
+# Test Shapiro-Wilka (dla n < 5000)
+if(n_obs < 5000) {
+  shapiro_test <- shapiro.test(residuals_model)
+  cat("1. TEST SHAPIRO-WILKA:\n")
+  cat("   Statystyka W =", round(shapiro_test$statistic, 4), "\n")
+  cat("   p-value =", round(shapiro_test$p.value, 4), "\n")
+  cat("   Wniosek:", ifelse(shapiro_test$p.value > 0.05, 
+                           "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
+                           "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+}
+
+# Test Jarque-Bera
+jb_test <- jarque.bera.test(residuals_model)
+cat("2. TEST JARQUE-BERA:\n")
+cat("   Statystyka JB =", round(jb_test$statistic, 4), "\n")
+cat("   p-value =", round(jb_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(jb_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
+                         "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+
+# Test Anderson-Darling
+ad_test <- ad.test(residuals_model)
+cat("3. TEST ANDERSON-DARLING:\n")
+cat("   Statystyka A =", round(ad_test$statistic, 4), "\n")
+cat("   p-value =", round(ad_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(ad_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
+                         "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+
+# Wykresy normalności
+par(mfrow = c(2, 2))
+hist(residuals_model, breaks = 20, prob = TRUE, main = "Histogram reszt", 
+     xlab = "Reszty", ylab = "Gęstość")
+lines(density(residuals_model), col = "red", lwd = 2)
+curve(dnorm(x, mean = mean(residuals_model), sd = sd(residuals_model)), 
+      add = TRUE, col = "blue", lwd = 2)
+legend("topright", c("Rzeczywista", "Teoretyczna"), col = c("red", "blue"), lwd = 2)
+
+qqnorm(residuals_model, main = "Wykres Q-Q reszt")
+qqline(residuals_model, col = "red")
+
+# ==============================================================================
+# 2.2 TESTOWANIE AUTOKORELACJI
+# ==============================================================================
+
+print_test_header("TESTOWANIE AUTOKORELACJI")
+
+cat("TEORIA: Autokorelacja oznacza korelację między resztami w różnych okresach.\n")
+cat("H0: Brak autokorelacji reszt\n")
+cat("H1: Występuje autokorelacja reszt\n\n")
+
+# Test Durbina-Watsona
+dw_test <- durbinWatsonTest(model)
+cat("1. TEST DURBINA-WATSONA:\n")
+cat("   Statystyka DW =", round(dw_test$dw, 4), "\n")
+cat("   p-value =", round(dw_test$p, 4), "\n")
+cat("   Wniosek:", ifelse(dw_test$p > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
+                         "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+
+# Test Ljunga-Boxa
+ljung_test <- Box.test(residuals_model, lag = min(10, floor(n_obs/5)), type = "Ljung-Box")
+cat("2. TEST LJUNGA-BOXA:\n")
+cat("   Statystyka LB =", round(ljung_test$statistic, 4), "\n")
+cat("   p-value =", round(ljung_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(ljung_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
+                         "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+
+# Test Breuscha-Godfreya
+bg_test <- bgtest(model, order = 2)
+cat("3. TEST BREUSCHA-GODFREYA:\n")
+cat("   Statystyka LM =", round(bg_test$statistic, 4), "\n")
+cat("   p-value =", round(bg_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(bg_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
+                         "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+
+# Wykres autokorelacji
+acf(residuals_model, main = "Funkcja autokorelacji reszt", lag.max = 20)
+
+# ==============================================================================
+# 2.3 BADANIE HETEROSKEDASTYCZNOŚCI
+# ==============================================================================
+
+print_test_header("BADANIE HETEROSKEDASTYCZNOŚCI")
+
+cat("TEORIA: Heteroskedastyczność oznacza niestałą wariancję składnika losowego.\n")
+cat("H0: Homoskedastyczność (stała wariancja)\n")
+cat("H1: Heteroskedastyczność (niestała wariancja)\n\n")
+
+# Test Breuscha-Pagana
+bp_test <- bptest(model)
+cat("1. TEST BREUSCHA-PAGANA:\n")
+cat("   Statystyka BP =", round(bp_test$statistic, 4), "\n")
+cat("   p-value =", round(bp_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(bp_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
+                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
+
+# Test White'a
+#white_test <- bptest(model, ~ fitted(model) + I(fitted(model)^2))
+#cat("2. TEST WHITE'A:\n")
+#cat("   Statystyka White =", round(white_test$statistic, 4), "\n")
+#cat("   p-value =", round(white_test$p.value, 4), "\n")
+#cat("   Wniosek:", ifelse(white_test$p.value > 0.05, 
+#                         "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
+#                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
+
+# Test Goldfelda-Quandta
+gq_test <- gqtest(model, order.by = fitted(model))
+cat("3. TEST GOLDFELDA-QUANDTA:\n")
+cat("   Statystyka GQ =", round(gq_test$statistic, 4), "\n")
+cat("   p-value =", round(gq_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(gq_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
+                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
+
+# Wykresy heteroskedastyczności
+par(mfrow = c(2, 2))
+plot(fitted_values, residuals_model, main = "Reszty vs Wartości dopasowane", 
+     xlab = "Wartości dopasowane", ylab = "Reszty")
+abline(h = 0, col = "red")
+
+plot(fitted_values, abs(residuals_model), main = "|Reszty| vs Wartości dopasowane", 
+     xlab = "Wartości dopasowane", ylab = "|Reszty|")
+
+# ==============================================================================
+# 2.4 TESTOWANIE WSPÓŁLINIOWOŚCI (VIF)
+# ==============================================================================
+
+print_test_header("TESTOWANIE WSPÓŁLINIOWOŚCI (VIF)")
+
+cat("TEORIA: Współliniowość oznacza wysoką korelację między zmiennymi objaśniającymi.\n")
+cat("VIF > 10: poważna współliniowość\n")
+cat("VIF > 5: umiarkowana współliniowość\n")
+cat("VIF < 5: brak problemów ze współliniowością\n\n")
+
+if(length(best_hellwig_vars) > 1) {
+  vif_values <- vif(model)
+  cat("WSPÓŁCZYNNIKI VIF:\n")
+  for(i in 1:length(vif_values)) {
+    cat("  ", names(vif_values)[i], ":", round(vif_values[i], 3))
+    if(vif_values[i] > 10) {
+      cat(" *** POWAŻNA WSPÓŁLINIOWOŚĆ ***")
+    } else if(vif_values[i] > 5) {
+      cat(" ** UMIARKOWANA WSPÓŁLINIOWOŚĆ **")
+    } else {
+      cat(" - OK")
+    }
+    cat("\n")
+  }
+  
+  max_vif <- max(vif_values)
+  cat("\nWNIOSEK:", ifelse(max_vif < 5, "Brak problemów ze współliniowością",
+                          ifelse(max_vif < 10, "Umiarkowana współliniowość - rozważ usunięcie zmiennej",
+                                 "Poważna współliniowość - koniecznie usuń zmienną")), "\n")
+} else {
+  cat("Model zawiera tylko jedną zmienną objaśniającą - brak współliniowości.\n")
+}
+
+# ==============================================================================
+# 2.5 TESTOWANIE STABILNOŚCI PARAMETRÓW (TEST CHOWA)
+# ==============================================================================
+
+print_test_header("TESTOWANIE STABILNOŚCI PARAMETRÓW (TEST CHOWA)")
+
+cat("TEORIA: Test Chowa sprawdza czy parametry modelu są stabilne w czasie.\n")
+cat("H0: Parametry są stabilne (brak przełomu strukturalnego)\n")
+cat("H1: Parametry nie są stabilne (występuje przełom strukturalny)\n\n")
+
+# Punkt przełomu w środku próby
+breakpoint <- floor(n_obs / 2)
+
+# Test Chowa
+chow_test <- sctest(formula_modelu, data = data_stationary, type = "Chow", point = breakpoint)
+cat("TEST CHOWA (punkt przełomu w obserwacji", breakpoint, "):\n")
+cat("   Statystyka F =", round(chow_test$statistic, 4), "\n")
+cat("   p-value =", round(chow_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(chow_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - parametry są stabilne",
+                         "Odrzucamy H0 - brak stabilności parametrów"), "\n\n")
+
+# Test CUSUM dla stabilności
+cusum_test <- efp(formula_modelu, data = data_stationary, type = "Rec-CUSUM")
+plot(cusum_test, main = "Test CUSUM stabilności parametrów")
+
+# ==============================================================================
+# 2.6 TESTOWANIE STABILNOŚCI POSTACI ANALITYCZNEJ
+# ==============================================================================
+
+print_test_header("TESTOWANIE STABILNOŚCI POSTACI ANALITYCZNEJ")
+
+# Test RESET Ramseya
+cat("TEORIA: Test RESET sprawdza czy postać funkcyjna modelu jest poprawna.\n")
+cat("H0: Model ma poprawną postać funkcyjną\n")
+cat("H1: Model ma niepoprawną postać funkcyjną\n\n")
+
+reset_test <- resettest(model, power = 2:3, type = "fitted")
+cat("1. TEST RESET RAMSEYA:\n")
+cat("   Statystyka F =", round(reset_test$statistic, 4), "\n")
+cat("   p-value =", round(reset_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(reset_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - poprawna postać modelu",
+                         "Odrzucamy H0 - niepoprawna postać modelu"), "\n\n")
+
+# Test liczby serii (runs test)
+cat("2. TEST LICZBY SERII:\n")
+cat("TEORIA: Test sprawdza czy reszty są losowo rozłożone.\n")
+cat("H0: Reszty są losowo rozłożone\n")
+cat("H1: Reszty wykazują systematyczne wzorce\n\n")
+
+# Przekształć reszty na znaki (+ lub -)
+signs <- ifelse(residuals_model > 0, 1, 0)
+runs_test <- runs.test(as.factor(signs))
+cat("   Statystyka =", round(runs_test$statistic, 4), "\n")
+cat("   p-value =", round(runs_test$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(runs_test$p.value > 0.05, 
+                         "Nie ma podstaw do odrzucenia H0 - reszty są losowe",
+                         "Odrzucamy H0 - reszty wykazują wzorce"), "\n\n")
+
+# ==============================================================================
+# 2.7 BADANIE EFEKTU KATALIZY
+# ==============================================================================
+
+print_test_header("BADANIE EFEKTU KATALIZY")
+
+cat("TEORIA: Efekt katalizy - jedna zmienna wpływa na siłę oddziaływania innej.\n")
+cat("Sprawdzamy czy interakcje między zmiennymi są istotne.\n\n")
+
+if(length(best_hellwig_vars) >= 2) {
+  # Model z interakcjami
+  interaction_vars <- paste(best_hellwig_vars, collapse = " * ")
+  formula_interaction <- as.formula(paste("D_CLOSE ~", interaction_vars))
+  model_interaction <- lm(formula_interaction, data = data_stationary)
+  
+  # Test F dla istotności interakcji
+  anova_result <- anova(model, model_interaction)
+  cat("TEST F DLA INTERAKCJI:\n")
+  cat("   Statystyka F =", round(anova_result$F[2], 4), "\n")
+  cat("   p-value =", round(anova_result$`Pr(>F)`[2], 4), "\n")
+  cat("   Wniosek:", ifelse(anova_result$`Pr(>F)`[2] > 0.05, 
+                           "Brak istotnego efektu katalizy",
+                           "Występuje istotny efekt katalizy"), "\n\n")
+  
+  # Wyświetl współczynniki interakcji
+  cat("WSPÓŁCZYNNIKI INTERAKCJI:\n")
+  interaction_summary <- summary(model_interaction)
+  coef_table <- interaction_summary$coefficients
+  interaction_terms <- rownames(coef_table)[grep(":", rownames(coef_table))]
+  
+  if(length(interaction_terms) > 0) {
+    for(term in interaction_terms) {
+      p_val <- coef_table[term, "Pr(>|t|)"]
+      cat("  ", term, ": p-value =", round(p_val, 4))
+      if(p_val < 0.05) cat(" ***")
+      else if(p_val < 0.1) cat(" *")
+      cat("\n")
+    }
+  }
+} else {
+  cat("Model zawiera tylko jedną zmienną - brak możliwości testowania katalizy.\n")
+}
+
+# ==============================================================================
+# 2.8 BADANIE KOINCYDENCJI
+# ==============================================================================
+
+print_test_header("BADANIE KOINCYDENCJI")
+
+cat("TEORIA: Koincydencja - zmienna objaśniająca ma wpływ jedynie w określonych okresach.\n")
+cat("Sprawdzamy stabilność parametrów w różnych podokresach.\n\n")
+
+# Podział próby na tercyle
+tercile_1 <- floor(n_obs / 3)
+tercile_2 <- floor(2 * n_obs / 3)
+
+# Modele dla podokresów
+data_1 <- data_stationary[1:tercile_1, ]
+data_2 <- data_stationary[(tercile_1+1):tercile_2, ]
+data_3 <- data_stationary[(tercile_2+1):n_obs, ]
+
+model_1 <- lm(formula_modelu, data = data_1)
+model_2 <- lm(formula_modelu, data = data_2)
+model_3 <- lm(formula_modelu, data = data_3)
+
+cat("ANALIZA STABILNOŚCI PARAMETRÓW W PODOKRESACH:\n\n")
+
+# Porównanie R²
+cat("Współczynniki determinacji:\n")
+cat("  Okres 1 (obs. 1-", tercile_1, "): R² =", round(summary(model_1)$r.squared, 4), "\n")
+cat("  Okres 2 (obs.", tercile_1+1, "-", tercile_2, "): R² =", round(summary(model_2)$r.squared, 4), "\n")
+cat("  Okres 3 (obs.", tercile_2+1, "-", n_obs, "): R² =", round(summary(model_3)$r.squared, 4), "\n\n")
+
+# Porównanie parametrów
+cat("PORÓWNANIE PARAMETRÓW W PODOKRESACH:\n")
+coef_1 <- coef(model_1)
+coef_2 <- coef(model_2)
+coef_3 <- coef(model_3)
+
+for(param in names(coef_1)) {
+  cat("Parametr", param, ":\n")
+  cat("  Okres 1:", round(coef_1[param], 4), "\n")
+  cat("  Okres 2:", round(coef_2[param], 4), "\n")
+  cat("  Okres 3:", round(coef_3[param], 4), "\n")
+  
+  # Sprawdź czy parametry znacząco się różnią
+  diff_12 <- abs(coef_1[param] - coef_2[param])
+  diff_23 <- abs(coef_2[param] - coef_3[param])
+  diff_13 <- abs(coef_1[param] - coef_3[param])
+  
+  if(max(diff_12, diff_23, diff_13) > abs(coef_1[param]) * 0.5) {
+    cat("  *** MOŻLIWA KOINCYDENCJA - duże różnice między okresami ***\n")
+  }
+  cat("\n")
+}
+
+# ==============================================================================
+# 3. PODSUMOWANIE WYNIKÓW WERYFIKACJI
+# ==============================================================================
+
+print_test_header("PODSUMOWANIE WYNIKÓW WERYFIKACJI")
+
+cat("WYNIKI TESTÓW DIAGNOSTYCZNYCH:\n\n")
+
+# Zbierz wyniki testów
+test_results <- data.frame(
+  Test = c("Normalność (Jarque-Bera)", "Autokorelacja (Ljung-Box)", 
+           "Heteroskedastyczność (Breusch-Pagan)", "Współliniowość (max VIF)",
+           "Stabilność (Chow)", "Postać modelu (RESET)"),
+  Statystyka = c(round(jb_test$statistic, 3), round(ljung_test$statistic, 3),
+                round(bp_test$statistic, 3), ifelse(length(best_hellwig_vars) > 1, round(max(vif_values), 3), "N/A"),
+                round(chow_test$statistic, 3), round(reset_test$statistic, 3)),
+  p_value = c(round(jb_test$p.value, 3), round(ljung_test$p.value, 3),
+             round(bp_test$p.value, 3), "N/A", round(chow_test$p.value, 3), round(reset_test$p.value, 3)),
+  Wynik = c(ifelse(jb_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
+           ifelse(ljung_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
+           ifelse(bp_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
+           ifelse(length(best_hellwig_vars) > 1, ifelse(max(vif_values) < 5, "SPEŁNIONE", "NIESPEŁNIONE"), "SPEŁNIONE"),
+           ifelse(chow_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
+           ifelse(reset_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"))
+)
+
+print(test_results)
+
+# Ogólna ocena modelu
+failed_tests <- sum(test_results$Wynik == "NIESPEŁNIONE")
+total_tests <- nrow(test_results)
+
+cat("\n=== OGÓLNA OCENA MODELU ===\n")
+cat("Spełnione założenia:", total_tests - failed_tests, "/", total_tests, "\n")
+cat("Niespełnione założenia:", failed_tests, "/", total_tests, "\n\n")
+
+if(failed_tests == 0) {
+  cat("MODEL SPEŁNIA WSZYSTKIE PODSTAWOWE ZAŁOŻENIA\n")
+} else if(failed_tests <= 2) {
+  cat("MODEL SPEŁNIA WIĘKSZOŚĆ ZAŁOŻEŃ - wymagane drobne korekty\n")
+} else {
+  cat("MODEL WYMAGA ISTOTNYCH POPRAWEK - niespełnia kluczowych założeń\n")
+}
+
+cat("\n=== REKOMENDACJE ===\n")
+if(jb_test$p.value <= 0.05) {
+  cat("• Rozważ transformację zmiennych (logarytmowanie) ze względu na brak normalności reszt\n")
+}
+if(ljung_test$p.value <= 0.05) {
+  cat("• Dodaj zmienne opóźnione lub rozważ model ARIMA ze względu na autokorelację\n")
+}
+if(bp_test$p.value <= 0.05) {
+  cat("• Użyj robustnych błędów standardowych ze względu na heteroskedastyczność\n")
+}
+if(length(best_hellwig_vars) > 1 && max(vif_values) >= 5) {
+  cat("• Usuń zmienne o wysokim VIF ze względu na współliniowość\n")
+}
+if(chow_test$p.value <= 0.05) {
+  cat("• Rozważ model ze zmiennymi strukturalnymi ze względu na niestabilność parametrów\n")
+}
+if(reset_test$p.value <= 0.05) {
+  cat("• Zmień postać funkcyjną modelu (dodaj nieliniowości)\n")
+}
+
+cat("\n", paste(rep("=", 60), collapse=""), "\n")
+cat("KONIEC WERYFIKACJI MODELU\n")
+cat(paste(rep("=", 60), collapse=""), "\n")
+```
