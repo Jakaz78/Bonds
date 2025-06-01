@@ -28,7 +28,7 @@ header-includes:
 
 Projekt ma na celu budowę kompleksowego modelu ekonometrycznego służącego do analizy i prognozowania rentowności 10-letnich polskich obligacji skarbowych. Model zostanie zbudowany na podstawie szeregów czasowych, co umożliwia głębszą analizę dynamicznych zależności ekonomicznych.
 
-## Zmienne 
+## Zmienne
 
 ### Zmienna objaśniana
 
@@ -110,8 +110,6 @@ Wartości zmiennej objaśnianej wachają się pomiędzy 13,288 a 1,149. Mediana 
 summary(X)
 ```
 
-
-
 ## Macierze korelacji
 
 ### Macierz korlelacji przed usunięciem zmiennych
@@ -125,6 +123,7 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
+
 Z 11 zmiennych objaśniających wybrałem 7, których wartość bezwględna korelacji nie przekracza 0.7.
 
 \newpage
@@ -147,6 +146,7 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
+
 \newpage
 
 # Identyfikacja niestacjonarnych zmiennych objaśniających
@@ -450,7 +450,7 @@ zmienne_objaśniające_do_modelu <- unlist(strsplit(najlepsza_kombinacja_string,
 
 ```
 
-\newpage 
+\newpage
 
 # Tworzenie modelu ekonometrycznego
 
@@ -465,22 +465,13 @@ print(summary(model))
 
 H0 takie ze ... p wynoszace xyz oznacza...
 
-
-
-
-
-
-
-
-
-
-
-
-
 \newpage
 
-
 # Niby TEST
+
+## Testowanie normalności rozkładu reszt
+
+
 
 ```{r, echo=FALSE}
 
@@ -489,40 +480,40 @@ residuals_model <- residuals(model)
 fitted_values <- fitted(model)
 n_obs <- length(residuals_model)
 n_params <- length(coef(model))
-
-
 cat("TEORIA: Testy normalności sprawdzają czy reszty mają rozkład normalny.\n")
 cat("H0: Reszty mają rozkład normalny\n")
 cat("H1: Reszty nie mają rozkładu normalnego\n")
 cat("Poziom istotności: α = 0.05\n\n")
+```
+
+### Test Shapiro-Wilka
+
+```{r, echo=FALSE}
 
   shapiro_test <- shapiro.test(residuals_model)
-  cat("1. TEST SHAPIRO-WILKA:\n")
   cat("   Statystyka W =", round(shapiro_test$statistic, 4), "\n")
   cat("   p-value =", round(shapiro_test$p.value, 4), "\n")
   cat("   Wniosek:", ifelse(shapiro_test$p.value > 0.05, 
                            "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
                            "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+```
 
+### Test Jarque-Bera
+
+```{r, echo=FALSE}
 # Test Jarque-Bera
 jb_test <- jarque.bera.test(residuals_model)
-cat("2. TEST JARQUE-BERA:\n")
 cat("   Statystyka JB =", round(jb_test$statistic, 4), "\n")
 cat("   p-value =", round(jb_test$p.value, 4), "\n")
 cat("   Wniosek:", ifelse(jb_test$p.value > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
                          "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+```
 
-# Test Anderson-Darling
-ad_test <- ad.test(residuals_model)
-cat("3. TEST ANDERSON-DARLING:\n")
-cat("   Statystyka A =", round(ad_test$statistic, 4), "\n")
-cat("   p-value =", round(ad_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(ad_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
-                         "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+### Wykresy normalności
 
-# Wykresy normalności
+```{r, echo=FALSE}
+
 par(mfrow = c(2, 2))
 hist(residuals_model, breaks = 20, prob = TRUE, main = "Histogram reszt", 
      xlab = "Reszty", ylab = "Gęstość")
@@ -531,23 +522,27 @@ curve(dnorm(x, mean = mean(residuals_model), sd = sd(residuals_model)),
       add = TRUE, col = "blue", lwd = 2)
 legend("topright", c("Rzeczywista", "Teoretyczna"), col = c("red", "blue"), lwd = 2)
 
-qqnorm(residuals_model, main = "Wykres Q-Q reszt")
+qqnorm(residuals_model,
+       main = "Wykres Q-Q reszt",
+       xlab = "Kwantyle teoretyczne",
+       ylab = "Kwantyle próbkowe")    
 qqline(residuals_model, col = "red")
 
 ```
 
-
-
 ## Testowanie autokorealcji
-
-
 
 ```{r, echo=FALSE}
 cat("TEORIA: Autokorelacja oznacza korelację między resztami w różnych okresach.\n")
 cat("H0: Brak autokorelacji reszt\n")
 cat("H1: Występuje autokorelacja reszt\n\n")
 
-# Test Durbina-Watsona
+```
+
+### Test Durbina-Watsona
+
+```{r, echo=FALSE}
+
 dw_test <- durbinWatsonTest(model)
 cat("1. TEST DURBINA-WATSONA:\n")
 cat("   Statystyka DW =", round(dw_test$dw, 4), "\n")
@@ -555,8 +550,12 @@ cat("   p-value =", round(dw_test$p, 4), "\n")
 cat("   Wniosek:", ifelse(dw_test$p > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
                          "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+```
 
-# Test Ljunga-Boxa
+### Test Ljunga-Boxa
+
+```{r, echo=FALSE}
+
 ljung_test <- Box.test(residuals_model, lag = min(10, floor(n_obs/5)), type = "Ljung-Box")
 cat("2. TEST LJUNGA-BOXA:\n")
 cat("   Statystyka LB =", round(ljung_test$statistic, 4), "\n")
@@ -564,8 +563,12 @@ cat("   p-value =", round(ljung_test$p.value, 4), "\n")
 cat("   Wniosek:", ifelse(ljung_test$p.value > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
                          "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+```
 
-# Test Breuscha-Godfreya
+### Test Breuscha-Godfreya
+
+```{r, echo=FALSE}
+
 bg_test <- bgtest(model, order = 2)
 cat("3. TEST BREUSCHA-GODFREYA:\n")
 cat("   Statystyka LM =", round(bg_test$statistic, 4), "\n")
@@ -573,23 +576,28 @@ cat("   p-value =", round(bg_test$p.value, 4), "\n")
 cat("   Wniosek:", ifelse(bg_test$p.value > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
                          "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+```
 
-# Wykres autokorelacji
+### Wykres autokorelacji
+
+```{r, echo=FALSE}
+
 acf(residuals_model, main = "Funkcja autokorelacji reszt", lag.max = 20)
 
 ```
 
-
 ## Badanie heteroskedastyczności
-
-
 
 ```{r, echo=FALSE}
 cat("TEORIA: Heteroskedastyczność oznacza niestałą wariancję składnika losowego.\n")
 cat("H0: Homoskedastyczność (stała wariancja)\n")
 cat("H1: Heteroskedastyczność (niestała wariancja)\n\n")
+```
 
-# Test Breuscha-Pagana
+### Test Breuscha-Pagana
+
+```{r, echo=FALSE}
+
 bp_test <- bptest(model)
 cat("1. TEST BREUSCHA-PAGANA:\n")
 cat("   Statystyka BP =", round(bp_test$statistic, 4), "\n")
@@ -597,9 +605,11 @@ cat("   p-value =", round(bp_test$p.value, 4), "\n")
 cat("   Wniosek:", ifelse(bp_test$p.value > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
                          "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
+```
 
-#Test White
+### Test White
 
+```{r, echo=FALSE}
 #white_test <- bptest(model, ~ fitted(model) + I(fitted(model)^2))
 #cat("2. TEST WHITE'A:\n")
 #cat("   Statystyka White =", round(white_test$statistic, 4), "\n")
@@ -607,8 +617,11 @@ cat("   Wniosek:", ifelse(bp_test$p.value > 0.05,
 #cat("   Wniosek:", ifelse(white_test$p.value > 0.05, 
 #                        "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
 #                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
+```
 
-# Test Goldfelda-Quandta
+### Test Goldfelda-Quandta
+
+```{r, echo=FALSE}
 gq_test <- gqtest(model, order.by = fitted(model))
 cat("3. TEST GOLDFELDA-QUANDTA:\n")
 cat("   Statystyka GQ =", round(gq_test$statistic, 4), "\n")
@@ -616,8 +629,11 @@ cat("   p-value =", round(gq_test$p.value, 4), "\n")
 cat("   Wniosek:", ifelse(gq_test$p.value > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
                          "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
+```
 
-# Wykresy heteroskedastyczności
+### Wykresy heteroskedastyczności
+
+```{r, echo=FALSE}
 par(mfrow = c(2, 2))
 plot(fitted_values, residuals_model, main = "Reszty vs Wartości dopasowane", 
      xlab = "Wartości dopasowane", ylab = "Reszty")
@@ -627,9 +643,9 @@ plot(fitted_values, abs(residuals_model), main = "|Reszty| vs Wartości dopasowa
      xlab = "Wartości dopasowane", ylab = "|Reszty|")
 ```
 
+## Testowanie współliniowości 
 
-## Testowanie współliniowości (VIF)
-
+### Test VIF
 
 ```{r, echo=FALSE}
 
@@ -638,7 +654,6 @@ cat("VIF > 10: poważna współliniowość\n")
 cat("VIF > 5: umiarkowana współliniowość\n")
 cat("VIF < 5: brak problemów ze współliniowością\n\n")
 
-if(length(best_hellwig_vars) > 1) {
   vif_values <- vif(model)
   cat("WSPÓŁCZYNNIKI VIF:\n")
   for(i in 1:length(vif_values)) {
@@ -657,15 +672,12 @@ if(length(best_hellwig_vars) > 1) {
   cat("\nWNIOSEK:", ifelse(max_vif < 5, "Brak problemów ze współliniowością",
                           ifelse(max_vif < 10, "Umiarkowana współliniowość - rozważ usunięcie zmiennej",
                                  "Poważna współliniowość - koniecznie usuń zmienną")), "\n")
-} else {
-  cat("Model zawiera tylko jedną zmienną objaśniającą - brak współliniowości.\n")
-}
+
 ```
 
+## Testowanie stabilności parametrów 
 
-## Testowanie stabilności parametrów (TEST CHOWA)
-
-
+### Test Chowa
 
 ```{r, echo=FALSE}
 cat("TEORIA: Test Chowa sprawdza czy parametry modelu są stabilne w czasie.\n")
@@ -683,20 +695,21 @@ cat("   p-value =", round(chow_test$p.value, 4), "\n")
 cat("   Wniosek:", ifelse(chow_test$p.value > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - parametry są stabilne",
                          "Odrzucamy H0 - brak stabilności parametrów"), "\n\n")
+```
 
-# Test CUSUM dla stabilności
+### Test CUSUM 
+
+```{r, echo=FALSE}
 cusum_test <- efp(formula_modelu, data = data_stationary, type = "Rec-CUSUM")
 plot(cusum_test, main = "Test CUSUM stabilności parametrów")
 
 ```
 
+## Testowanie stabilności postaci analitycznej 
 
-## Testowanie stabilności postaci analitycznej (TEST RESET)
-
-
+### Test RESET Ramseya
 
 ```{r, echo=FALSE}
-# Test RESET Ramseya
 cat("TEORIA: Test RESET sprawdza czy postać funkcyjna modelu jest poprawna.\n")
 cat("H0: Model ma poprawną postać funkcyjną\n")
 cat("H1: Model ma niepoprawną postać funkcyjną\n\n")
@@ -708,8 +721,11 @@ cat("   p-value =", round(reset_test$p.value, 4), "\n")
 cat("   Wniosek:", ifelse(reset_test$p.value > 0.05, 
                          "Nie ma podstaw do odrzucenia H0 - poprawna postać modelu",
                          "Odrzucamy H0 - niepoprawna postać modelu"), "\n\n")
+```
 
-# Test liczby serii (runs test)
+### Test liczby serii (runs test)
+
+```{r , echo=FALSE}
 cat("2. TEST LICZBY SERII:\n")
 cat("TEORIA: Test sprawdza czy reszty są losowo rozłożone.\n")
 cat("H0: Reszty są losowo rozłożone\n")
@@ -728,12 +744,12 @@ cat("   Wniosek:", ifelse(runs_test$p.value > 0.05,
 
 ## Badanie efektu katalizy
 
+### Test F 
 
 ```{r , echo=FALSE}
 cat("TEORIA: Efekt katalizy - jedna zmienna wpływa na siłę oddziaływania innej.\n")
 cat("Sprawdzamy czy interakcje między zmiennymi są istotne.\n\n")
 
-if(length(best_hellwig_vars) >= 2) {
   # Model z interakcjami
   interaction_vars <- paste(best_hellwig_vars, collapse = " * ")
   formula_interaction <- as.formula(paste("D_CLOSE ~", interaction_vars))
@@ -763,14 +779,12 @@ if(length(best_hellwig_vars) >= 2) {
       cat("\n")
     }
   }
-} else {
-  cat("Model zawiera tylko jedną zmienną - brak możliwości testowania katalizy.\n")
-}
+ 
 ```
 
 ## Badanie koincydencji
 
-
+### Porównanie R²
 
 ```{r , echo=FALSE}
 cat("TEORIA: Koincydencja - zmienna objaśniająca ma wpływ jedynie w określonych okresach.\n")
@@ -791,7 +805,7 @@ model_3 <- lm(formula_modelu, data = data_3)
 
 cat("ANALIZA STABILNOŚCI PARAMETRÓW W PODOKRESACH:\n\n")
 
-# Porównanie R²
+
 cat("Współczynniki determinacji:\n")
 cat("  Okres 1 (obs. 1-", tercile_1, "): R² =", round(summary(model_1)$r.squared, 4), "\n")
 cat("  Okres 2 (obs.", tercile_1+1, "-", tercile_2, "): R² =", round(summary(model_2)$r.squared, 4), "\n")
@@ -821,10 +835,7 @@ for(param in names(coef_1)) {
 }
 ```
 
-
 # Podsumowanie wyników
-
-
 
 ```{r , echo=FALSE}
 cat("WYNIKI TESTÓW DIAGNOSTYCZNYCH:\n\n")
