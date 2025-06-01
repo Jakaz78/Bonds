@@ -5,6 +5,7 @@ date: "`r Sys.Date()`"
 output:
   pdf_document:
     toc: true
+    toc_depth: 4 
     number_sections: true
     latex_engine: xelatex
     highlight: tango
@@ -27,11 +28,13 @@ header-includes:
 
 Projekt ma na celu budowę kompleksowego modelu ekonometrycznego służącego do analizy i prognozowania rentowności 10-letnich polskich obligacji skarbowych. Model zostanie zbudowany na podstawie szeregów czasowych, co umożliwia głębszą analizę dynamicznych zależności ekonomicznych.
 
-## Zmienna objaśniana
+## Zmienne 
+
+### Zmienna objaśniana
 
 **CLOSE** - rentowność 10-letnich polskich obligacji skarbowych
 
-## Zmienne objaśniające
+### Zmienne objaśniające
 
 **XAUUSD** - cena złota w dolarze amerykańskim\
 **S&P500** - ETF 500 największych notowanych na giełdzie amerykańskich spółek\
@@ -109,7 +112,9 @@ summary(X)
 
 
 
-## Macierz korelacji
+## Macierze korelacji
+
+### Macierz korlelacji przed usunięciem zmiennych
 
 ```{r corrplot, fig.width=20, fig.height=20, echo=FALSE}
 cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
@@ -120,14 +125,16 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
-Z 11 zmiennych objaśniających wybrałem 8, których wartość bezwględna korelacji nie przekracza 0.7.
+Z 11 zmiennych objaśniających wybrałem 7, których wartość bezwględna korelacji nie przekracza 0.7.
 
 \newpage
 
+### Macierz korlelacji po usunięciu zmiennych
+
 ```{r corrplot2, fig.width=20, fig.height=20, echo=FALSE}
 
-data_all <- data_all[, c("CLOSE", "INFLATION", "XAUUSD", "USDPLN", "WIG20", "S&P500", 
-                 "UNEMPLOYMENT", "PMI", "OIL")]
+data_all <- data_all[, c("CLOSE", "XAUUSD", "USDPLN", "WIG20", "S&P500", 
+                 "PMI", "OIL","UNEMPLOYMENT")]
 data <- data_all[1:train_size, , drop = FALSE]
 data_test  <- data_all[(train_size + 1):n, , drop = FALSE]
 
@@ -252,7 +259,7 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2,
       if (save_plots) {
         ggsave(filename = file.path(plot_dir, paste0("before_", var_name, ".png")),
                plot = plot_before, width = 6, height = 4, dpi = 300)
-        ggsave(filename = file.path(plot_dir, paste0("after_", new_name, ".png")),  # <-- poprawione
+        ggsave(filename = file.path(plot_dir, paste0("after_", new_name, ".png")),  
                plot = plot_after, width = 6, height = 4, dpi = 300)
       }
     }
@@ -330,7 +337,22 @@ stationarity_df <- data.frame(
 knitr::kable(stationarity_df, row.names = FALSE)
 ```
 
+## Sprawdzenie korelacji po usunięciu niestacjonarności
+
+```{r, fig.width=20, fig.height=20, echo=FALSE}
+
+cor_matrix <- cor(data_stationary, use = "pairwise.complete.obs", method = "pearson")
+
+
+    corrplot(cor_matrix, method = "color",
+           order = "alphabet",
+           addCoef.col = "black", 
+           tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
+```
+
 ## Usunięcie zmiennych o zerowej wariancji
+
+### Przed usunięciem
 
 ```{r , echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 for (col_name in colnames(data_stationary)) {
@@ -339,18 +361,20 @@ for (col_name in colnames(data_stationary)) {
       col_var <- var(data_stationary[[col_name]])
       cat(col_name, "- Współczynnik zmienności:", col_cv, "%, Wariancja: ", col_var,"\n")
 }
-data_stationary <- data_stationary[!colnames(data_stationary) %in% c("D_INFLATION","D_UNEMPLOYMENT","D_USDPLN")]
+
 
 
 #usuwam zmienne o prawie 0 wariancji i helwwig spada
 
+data_stationary <- data_stationary[, !(colnames(data_stationary) %in% c("D_UNEMPLOYMENT"))]
 
 
 ```
 
-## Po usunieciu
+### Po usunięciu
 
 ```{r , echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
+
 for (col_name in colnames(data_stationary)) {
   
       col_cv <- sd(data_stationary[[col_name]]) / mean(data_stationary[[col_name]]) * 100
@@ -460,36 +484,18 @@ H0 takie ze ... p wynoszace xyz oznacza...
 
 ```{r, echo=FALSE}
 
-# ==============================================================================
-# 2. WERYFIKACJA POPRAWNOŚCI MODELU
-# ==============================================================================
-
-# Funkcja do tworzenia sekcji wyników
-print_test_header <- function(title) {
-  cat("\n", paste(rep("=", 60), collapse=""), "\n")
-  cat(paste("   ", title), "\n")
-  cat(paste(rep("=", 60), collapse=""), "\n")
-}
-
 # Przygotowanie reszt
 residuals_model <- residuals(model)
 fitted_values <- fitted(model)
 n_obs <- length(residuals_model)
 n_params <- length(coef(model))
 
-# ==============================================================================
-# 2.1 BADANIE NORMALNOŚCI ROZKŁADU RESZT
-# ==============================================================================
-
-print_test_header("BADANIE NORMALNOŚCI ROZKŁADU RESZT")
 
 cat("TEORIA: Testy normalności sprawdzają czy reszty mają rozkład normalny.\n")
 cat("H0: Reszty mają rozkład normalny\n")
 cat("H1: Reszty nie mają rozkładu normalnego\n")
 cat("Poziom istotności: α = 0.05\n\n")
 
-# Test Shapiro-Wilka (dla n < 5000)
-if(n_obs < 5000) {
   shapiro_test <- shapiro.test(residuals_model)
   cat("1. TEST SHAPIRO-WILKA:\n")
   cat("   Statystyka W =", round(shapiro_test$statistic, 4), "\n")
@@ -497,7 +503,6 @@ if(n_obs < 5000) {
   cat("   Wniosek:", ifelse(shapiro_test$p.value > 0.05, 
                            "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
                            "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
-}
 
 # Test Jarque-Bera
 jb_test <- jarque.bera.test(residuals_model)
@@ -529,12 +534,15 @@ legend("topright", c("Rzeczywista", "Teoretyczna"), col = c("red", "blue"), lwd 
 qqnorm(residuals_model, main = "Wykres Q-Q reszt")
 qqline(residuals_model, col = "red")
 
-# ==============================================================================
-# 2.2 TESTOWANIE AUTOKORELACJI
-# ==============================================================================
+```
 
-print_test_header("TESTOWANIE AUTOKORELACJI")
 
+
+## Testowanie autokorealcji
+
+
+
+```{r, echo=FALSE}
 cat("TEORIA: Autokorelacja oznacza korelację między resztami w różnych okresach.\n")
 cat("H0: Brak autokorelacji reszt\n")
 cat("H1: Występuje autokorelacja reszt\n\n")
@@ -569,12 +577,14 @@ cat("   Wniosek:", ifelse(bg_test$p.value > 0.05,
 # Wykres autokorelacji
 acf(residuals_model, main = "Funkcja autokorelacji reszt", lag.max = 20)
 
-# ==============================================================================
-# 2.3 BADANIE HETEROSKEDASTYCZNOŚCI
-# ==============================================================================
+```
 
-print_test_header("BADANIE HETEROSKEDASTYCZNOŚCI")
 
+## Badanie heteroskedastyczności
+
+
+
+```{r, echo=FALSE}
 cat("TEORIA: Heteroskedastyczność oznacza niestałą wariancję składnika losowego.\n")
 cat("H0: Homoskedastyczność (stała wariancja)\n")
 cat("H1: Heteroskedastyczność (niestała wariancja)\n\n")
@@ -588,13 +598,14 @@ cat("   Wniosek:", ifelse(bp_test$p.value > 0.05,
                          "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
                          "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
 
-# Test White'a
+#Test White
+
 #white_test <- bptest(model, ~ fitted(model) + I(fitted(model)^2))
 #cat("2. TEST WHITE'A:\n")
 #cat("   Statystyka White =", round(white_test$statistic, 4), "\n")
 #cat("   p-value =", round(white_test$p.value, 4), "\n")
 #cat("   Wniosek:", ifelse(white_test$p.value > 0.05, 
-#                         "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
+#                        "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
 #                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
 
 # Test Goldfelda-Quandta
@@ -614,12 +625,13 @@ abline(h = 0, col = "red")
 
 plot(fitted_values, abs(residuals_model), main = "|Reszty| vs Wartości dopasowane", 
      xlab = "Wartości dopasowane", ylab = "|Reszty|")
+```
 
-# ==============================================================================
-# 2.4 TESTOWANIE WSPÓŁLINIOWOŚCI (VIF)
-# ==============================================================================
 
-print_test_header("TESTOWANIE WSPÓŁLINIOWOŚCI (VIF)")
+## Testowanie współliniowości (VIF)
+
+
+```{r, echo=FALSE}
 
 cat("TEORIA: Współliniowość oznacza wysoką korelację między zmiennymi objaśniającymi.\n")
 cat("VIF > 10: poważna współliniowość\n")
@@ -648,13 +660,14 @@ if(length(best_hellwig_vars) > 1) {
 } else {
   cat("Model zawiera tylko jedną zmienną objaśniającą - brak współliniowości.\n")
 }
+```
 
-# ==============================================================================
-# 2.5 TESTOWANIE STABILNOŚCI PARAMETRÓW (TEST CHOWA)
-# ==============================================================================
 
-print_test_header("TESTOWANIE STABILNOŚCI PARAMETRÓW (TEST CHOWA)")
+## Testowanie stabilności parametrów (TEST CHOWA)
 
+
+
+```{r, echo=FALSE}
 cat("TEORIA: Test Chowa sprawdza czy parametry modelu są stabilne w czasie.\n")
 cat("H0: Parametry są stabilne (brak przełomu strukturalnego)\n")
 cat("H1: Parametry nie są stabilne (występuje przełom strukturalny)\n\n")
@@ -675,12 +688,14 @@ cat("   Wniosek:", ifelse(chow_test$p.value > 0.05,
 cusum_test <- efp(formula_modelu, data = data_stationary, type = "Rec-CUSUM")
 plot(cusum_test, main = "Test CUSUM stabilności parametrów")
 
-# ==============================================================================
-# 2.6 TESTOWANIE STABILNOŚCI POSTACI ANALITYCZNEJ
-# ==============================================================================
+```
 
-print_test_header("TESTOWANIE STABILNOŚCI POSTACI ANALITYCZNEJ")
 
+## Testowanie stabilności postaci analitycznej (TEST RESET)
+
+
+
+```{r, echo=FALSE}
 # Test RESET Ramseya
 cat("TEORIA: Test RESET sprawdza czy postać funkcyjna modelu jest poprawna.\n")
 cat("H0: Model ma poprawną postać funkcyjną\n")
@@ -709,12 +724,12 @@ cat("   Wniosek:", ifelse(runs_test$p.value > 0.05,
                          "Nie ma podstaw do odrzucenia H0 - reszty są losowe",
                          "Odrzucamy H0 - reszty wykazują wzorce"), "\n\n")
 
-# ==============================================================================
-# 2.7 BADANIE EFEKTU KATALIZY
-# ==============================================================================
+```
 
-print_test_header("BADANIE EFEKTU KATALIZY")
+## Badanie efektu katalizy
 
+
+```{r , echo=FALSE}
 cat("TEORIA: Efekt katalizy - jedna zmienna wpływa na siłę oddziaływania innej.\n")
 cat("Sprawdzamy czy interakcje między zmiennymi są istotne.\n\n")
 
@@ -751,13 +766,13 @@ if(length(best_hellwig_vars) >= 2) {
 } else {
   cat("Model zawiera tylko jedną zmienną - brak możliwości testowania katalizy.\n")
 }
+```
 
-# ==============================================================================
-# 2.8 BADANIE KOINCYDENCJI
-# ==============================================================================
+## Badanie koincydencji
 
-print_test_header("BADANIE KOINCYDENCJI")
 
+
+```{r , echo=FALSE}
 cat("TEORIA: Koincydencja - zmienna objaśniająca ma wpływ jedynie w określonych okresach.\n")
 cat("Sprawdzamy stabilność parametrów w różnych podokresach.\n\n")
 
@@ -804,13 +819,14 @@ for(param in names(coef_1)) {
   }
   cat("\n")
 }
+```
 
-# ==============================================================================
-# 3. PODSUMOWANIE WYNIKÓW WERYFIKACJI
-# ==============================================================================
 
-print_test_header("PODSUMOWANIE WYNIKÓW WERYFIKACJI")
+# Podsumowanie wyników
 
+
+
+```{r , echo=FALSE}
 cat("WYNIKI TESTÓW DIAGNOSTYCZNYCH:\n\n")
 
 # Zbierz wyniki testów
