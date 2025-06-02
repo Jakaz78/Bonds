@@ -78,6 +78,8 @@ library(nortest)
 library(sandwich)     
 library(strucchange)  
 library(nlme)
+library(forecast)
+
 ```
 
 ```{r}
@@ -474,8 +476,8 @@ cat("Pojemność Hellwiga dla tej kombinacji:", hellwig_result$Pojemnosc_Hellwig
 
 zmienne_objaśniające_do_modelu <- unlist(strsplit(najlepsza_kombinacja_string, ", "))
 
-
-
+cols_to_keep <- c(best_hellwig_vars, "D_CLOSE")
+data_stationary <- data_stationary[, cols_to_keep]
 ```
 
 Pojemność Hellwiga dla tej kombinacji wynosi 0,0741. Oznacza to, że te dwie zmienne razem wyjaśniają około 7,41 % wariancji zmiennej D_CLOSE.
@@ -612,6 +614,59 @@ cat("   Wniosek:", ifelse(bg_test$p.value > 0.05,
 ```{r, echo=FALSE}
 
 acf(residuals_model, main = "Funkcja autokorelacji reszt", lag.max = 20)
+
+```
+
+### Model ARMA na resztach + diagnostyka
+
+```{r, echo=FALSE}
+
+D_log_CLOSE_ts <- ts(data_stationary$D_CLOSE)
+D_log_WIG20_ts <- ts(data_stationary$D_WIG20)
+D_PMI_ts <- ts(data_stationary$D_PMI)
+
+
+xreg_hellwig <- cbind(D_log_WIG20_ts, D_PMI_ts)
+
+
+model_arimax <- auto.arima(
+  D_log_CLOSE_ts,
+  xreg = xreg_hellwig,
+  d = 0,
+  max.p = 5,
+  max.q = 5,
+  seasonal = FALSE,
+  stepwise = FALSE,
+  approximation = FALSE,
+  trace = FALSE
+)
+
+cat("\nMODEL ARIMAX (Hellwig - STAŁY):\n")
+print(summary(model_arimax))
+
+
+residuals_model <- residuals(model_arimax)
+fitted_values <- fitted(model_arimax)
+n_obs <- length(residuals_model)
+```
+
+### Diagnostyka reszt modelu ARMA
+
+```{r , echo=FALSE}
+cat("WYKRES I TESTY DLA RESZT MODEL ARMA:")
+checkresiduals(model_arimax)
+```
+
+### Test Ljunga-Boxa dla reszt ARMA
+
+```{r , echo=FALSE}
+lb_resid <- Box.test(residuals(model_arimax), lag = 12, type = "Ljung-Box")
+cat("TEST LJUNGA-BOXA (reszty ARIMAX):\n")
+cat("   Statystyka =", round(lb_resid$statistic, 4), "\n")
+cat("   p-value =", round(lb_resid$p.value, 4), "\n")
+cat("   Wniosek:", ifelse(lb_resid$p.value > 0.05,
+                        "Brak autokorelacji reszt po ARIMAX (SPEŁNIONE)",
+                        "Występuje autokorelacja reszt po ARIMAX (NIESPEŁNIONE)"), "\n")
 
 ```
 
@@ -865,19 +920,19 @@ for(param in names(coef_1)) {
 
 ```{r , echo=FALSE}
 cat("WYNIKI TESTÓW DIAGNOSTYCZNYCH:\n\n")
-
+lb_resid
 # Zbierz wyniki testów
 test_results <- data.frame(
   Test = c("Normalność (Jarque-Bera)", "Autokorelacja (Ljung-Box)", 
            "Heteroskedastyczność (Breusch-Pagan)", "Współliniowość (max VIF)",
            "Stabilność (Chow)", "Postać modelu (RESET)"),
-  Statystyka = c(round(jb_test$statistic, 3), round(ljung_test$statistic, 3),
+  Statystyka = c(round(jb_test$statistic, 3), round(lb_resid$statistic, 3),
                 round(bp_test$statistic, 3), ifelse(length(best_hellwig_vars) > 1, round(max(vif_values), 3), "N/A"),
                 round(chow_test$statistic, 3), round(reset_test$statistic, 3)),
-  p_value = c(round(jb_test$p.value, 3), round(ljung_test$p.value, 3),
+  p_value = c(round(jb_test$p.value, 3), round(lb_resid$p.value, 3),
              round(bp_test$p.value, 3), "N/A", round(chow_test$p.value, 3), round(reset_test$p.value, 3)),
   Wynik = c(ifelse(jb_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
-           ifelse(ljung_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
+           ifelse(lb_resid$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
            ifelse(bp_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
            ifelse(length(best_hellwig_vars) > 1, ifelse(max(vif_values) < 5, "SPEŁNIONE", "NIESPEŁNIONE"), "SPEŁNIONE"),
            ifelse(chow_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
@@ -906,7 +961,7 @@ cat("\n=== REKOMENDACJE ===\n")
 if(jb_test$p.value <= 0.05) {
   cat("• Rozważ transformację zmiennych (logarytmowanie) ze względu na brak normalności reszt\n")
 }
-if(ljung_test$p.value <= 0.05) {
+if(lb_resid$p.value <= 0.05) {
   cat("• Dodaj zmienne opóźnione lub rozważ model ARIMA ze względu na autokorelację\n")
 }
 if(bp_test$p.value <= 0.05) {
@@ -925,89 +980,6 @@ if(reset_test$p.value <= 0.05) {
 cat("\n", paste(rep("=", 60), collapse=""), "\n")
 cat("KONIEC WERYFIKACJI MODELU\n")
 cat(paste(rep("=", 60), collapse=""), "\n")
-```
-
-
-
-
-### TESTUWENCJA OD CHATA
-```{r, echo=FALSE}
-model_formula<-formula_modelu
-model_lin<-model
-data_prepared<-data_stationary
-# 7. Analiza diagnostyczna
-# 7.1 Normalność reszt
-shapiro_lin <- shapiro.test(residuals(model_lin))
-
-# 7.2 Autokorelacja reszt
-dw_lin <- durbinWatsonTest(model_lin)
-ljung_lin <- Box.test(residuals(model_lin), lag = 10, type = "Ljung-Box")
-
-# 7.3 Heteroskedastyczność
-bp_lin <- bptest(model_lin)
-gq_lin <- gqtest(model_lin, order.by = fitted(model_lin))
-
-# 7.4 Kollinearność (VIF)
-vif_lin <- vif(model_lin)
-
-# Wyświetlenie wyników diagnostyki
-cat("=== TEST NORMALNOŚCI (Shapiro-Wilk) ===\n")
-print(shapiro_lin)
-cat("\n=== TEST AUTOKORELACJI (Durbin-Watson) ===\n")
-print(dw_lin)
-cat("\n=== TEST AUTOKORELACJI (Ljung-Box) ===\n")
-print(ljung_lin)
-cat("\n=== TEST HETEROSKEDASTYCZNOŚCI (Breusch-Pagan) ===\n")
-print(bp_lin)
-cat("\n=== TEST HETEROSKEDASTYCZNOŚCI (Goldfeld-Quandt) ===\n")
-print(gq_lin)
-cat("\n=== WSPÓŁCZYNNIKI VIF ===\n")
-print(vif_lin)
-
-# 8. Jeśli heteroskedastyczność występuje, stosujemy odporne błędy standardowe
-cat("\n=== Estymacja z odmianą HC1 (robust SE) ===\n")
-robust_coefs <- coeftest(model_lin, vcov = vcovHC(model_lin, type = "HC1"))
-print(robust_coefs)
-
-
-# 11. Jeśli nadal heteroskedastyczność lub autokorelacja utrzymuje się, można rozważyć dodanie opóźnień w formule:
-# model_formula_ar_lags <- as.formula("D_log_CLOSE ~ D_log_WIG20 + D_PMI + D_log_OIL + D2_S.P500 +
-#                                      lag(D_log_CLOSE, 1) + lag(D_log_CLOSE, 2)")
-# model_lagged <- lm(model_formula_ar_lags, data = data_prepared)
-# summary(model_lagged)
-
-# 12. Jeśli test RESET wskazuje na niepoprawną postać funkcji, dodajemy wielomiany lub interakcje:
-reset_lin <- resettest(model_lin, power = 2:3, type = "fitted")
-cat("\n=== TEST RESET RAMSEYA DLA MODEL_LIN ===\n")
-print(reset_lin)
-
-# W razie potrzeby, model wzbogacamy np. o interakcję:
-# model_interaction <- lm(D_log_CLOSE ~ D_log_WIG20 * D_PMI + D_log_OIL + D2_S.P500, data = data_prepared)
-# summary(model_interaction)
-
-# 13. Finalnie wyświetlamy porównanie R² i VIF, by upewnić się, że model jest stabilny
-cat("\n=== Podsumowanie modelu linowego ===\n")
-cat("R^2:", round(summary(model_lin)$r.squared, 4), "\n")
-cat("Adj. R^2:", round(summary(model_lin)$adj.r.squared, 4), "\n")
-cat("Maksymalny VIF:", round(max(vif_lin), 3), "\n")
-
-# Rekomendacje na podstawie wyników
-cat("\n=== REKOMENDACJE ===\n")
-if(shapiro_lin$p.value <= 0.05) {
-  cat("• Brak normalności reszt – rozważ transformację zmiennej (log-diff) lub usunięcie outlierów.\n")
-}
-if(dw_lin$p <= 0.05 | ljung_lin$p.value <= 0.05) {
-  cat("• Autokorelacja reszt – rozważ model GLS(AR1) lub dodanie opóźnień w zmiennych objaśniających.\n")
-}
-if(bp_lin$p.value <= 0.05 | gq_lin$p.value <= 0.05) {
-  cat("• Heteroskedastyczność – zastosuj odporne błędy standardowe (robust SE) lub model GARCH.\n")
-}
-if(max_vif >= 5) {
-  cat("• Współliniowość – usuń lub połącz zmienne o wysokim VIF.\n")
-}
-if(reset_lin$p.value <= 0.05) {
-  cat("• Niepoprawna postać funkcyjna – spróbuj dodać składniki nieliniowe lub interakcje.\n")
-}
 ```
 
 
@@ -1290,3 +1262,14 @@ cat("• Przeprowadź testy diagnostyczne (normalność, autokorelacja, heterosk
 cat("• Sprawdź stabilność parametrów w czasie\n")
 
 ```
+
+
+
+
+
+
+
+
+
+
+
