@@ -38,12 +38,12 @@ Projekt ma na celu budowę kompleksowego modelu ekonometrycznego służącego do
 
 **10YDEBOND** - rentowność 10-letnich niemieckich obligacji skarbowych\
 **10YUSBOND** - rentowność 10-letnich amerykańskich obligacji skarbowych\
-**DETAL** - sprzedaź detaliczna miesiąc do miesiąca\
+**DETAL** - sprzedaż detaliczna miesiąc do miesiąca\
 **XAUUSD** - cena złota w dolarze amerykańskim\
 **S&P500** - ETF 500 największych notowanych na giełdzie amerykańskich spółek\
 **PMI** - wskaźnik aktywności przemysłowej\
-**WIG20** - 20 najwiekszych notowanych na gieldzie polskich spolek\
-**OIL** - cena ropy naftowej za barylke\
+**WIG20** - 20 największych notowanych na giełdzie polskich spółek\
+**OIL** - cena ropy naftowej za baryłkę\
 **UNEMPLOYMENT** - stopa bezrobocia w Polsce\
 **USDPLN** - kurs dolara amerykańskiego wyrażony w złotych\
 **INFLATION** - inflacja rok do roku\
@@ -125,7 +125,7 @@ summary(X)
 
 ## Macierze korelacji
 
-### Macierz korlelacji przed usunięciem zmiennych
+### Macierz korelacji przed usunięciem zmiennych
 
 ```{r corrplot, fig.width=20, fig.height=20, echo=FALSE}
 cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
@@ -137,7 +137,7 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
 
-Z 11 zmiennych objaśniających wybrałem 7, których wartość bezwględna korelacji nie przekracza 0.8. Dodatkowo usuwam zmienną "INFLATION" abym mógł zlogarytmować dane.
+Z 11 zmiennych objaśniających wybrałem 7, których wartość bezwzględna korelacji nie przekracza 0,8. Dodatkowo usuwam zmienną "INFLATION" abym mógł zlogarytmować dane.
 
 \newpage
 
@@ -381,7 +381,7 @@ stationarity_df <- data.frame(
 knitr::kable(stationarity_df, row.names = FALSE)
 ```
 
-Wszystkie zmienne przekształcone do postaci różnicowej (D_CLOSE, D_WIG20, D2_S.P500, D_UNEMPLOYMENT, D_PMI, D_OIL) okazały się stacjonarne (test AD-Fuller zakończył się odrzuceniem hipotezy o istnieniu pierwiastka jednostkowego, a test KPSS nie wskazał na niestacjonarność).
+Wszystkie zmienne przekształcone do postaci różnicowej (D_CLOSE, D_WIG20, D2_S&P500, D_UNEMPLOYMENT, D_PMI, D_OIL) okazały się stacjonarne (test AD-Fuller zakończył się odrzuceniem hipotezy o istnieniu pierwiastka jednostkowego, a test KPSS nie wskazał na niestacjonarność).
 
 Oznacza to, że proces różnicowania był wystarczający – w dalszej części modelu możemy bezpiecznie użyć tych stacjonarnych serii jako zmiennych w regresji liniowej.
 
@@ -439,7 +439,6 @@ for (col_name in colnames(data_stationary)) {
 
 ## Metoda Hellwiga
 
-DLACZEGO HELLWIG?
 
 ```{r , echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
 hellwig_method_original <- function(y, X) {
@@ -507,7 +506,7 @@ data_test_stationary <- remove_nonstationarity_test(data_test, diff_info)
 data_test_stationary <- data_test_stationary[, cols_to_keep]
 ```
 
-Pojemność Hellwiga dla tej kombinacji wynosi 0,0705. Najlepsza kombinacja zmiennych objaśniających składa się ze zmiennych D_WIG20 orz D_OIL
+Wybrałem Metodę Hellwiga, ponieważ pozwala ona wybrać taki zestaw predyktorów, który maksymalizuje korelację z rentownością obligacji (D_CLOSE) przy jednoczesnym minimalizowaniu wzajemnej korelacji między zmiennymi. Dzięki temu uzyskałem prosty, ale informacyjnie optymalny model oparty na D_WIG20 i D_OIL.
 
 \newpage
 
@@ -536,7 +535,7 @@ Testy normalności sprawdzają czy reszty mają rozkład normalny.
 
 H0: Reszty mają rozkład normalny\
 H1: Reszty nie mają rozkładu normalny\
-Poziom istotności: α = 0.05
+Poziom istotności: α = 0,05
 
 ```{r, echo=FALSE}
 
@@ -558,7 +557,7 @@ n_params <- length(coef(model))
   
 ```
 
-Statystyka W = 0.9842, p-value = 0.0079
+Statystyka W = 0,9842, p-value = 0,0079
 
 Wniosek: Odrzucamy H0 - reszty nie są normalne
 
@@ -572,7 +571,7 @@ cat("   p-value =", round(jb_test$p.value, 4), "\n")
 
 ```
 
-Statystyka JB = 12.1445 p-value = 0.0023
+Statystyka JB = 12,1445 p-value = 0,0023
 
 Wniosek: Odrzucamy H0 - reszty nie są normalne
 
@@ -598,7 +597,7 @@ qqline(residuals_model, col = "red")
 
 Dane zostały już zlogarytmowane. Próba usunięcia braku normalnośći została wykonana. Nie udało się wyeliminować tego problemu
 
-## Testowanie autokorealcji
+## Testowanie autokorelacji
 
 Autokorelacja oznacza korelację między resztami w różnych okresach
 
@@ -616,7 +615,7 @@ cat("   p-value =", round(dw_test$p, 4), "\n")
 
 ```
 
-Statystyka DW = 1.8667, p-value = 0.282
+Statystyka DW = 1,8667, p-value = 0,282
 
 Wniosek: Nie ma podstaw do odrzucenia H0 - brak autokorelacji
 
@@ -630,7 +629,7 @@ cat("   Statystyka LB =", round(ljung_test$statistic, 4), "\n")
 cat("   p-value =", round(ljung_test$p.value, 4), "\n")
 ```
 
-Statystyka LB = 16.9273, p-value = 0.076
+Statystyka LB = 16,9273, p-value = 0,076
 
 Wniosek: Nie ma podstaw do odrzucenia H0 - brak autokorelacji
 
@@ -644,7 +643,7 @@ cat("   p-value =", round(bg_test$p.value, 4), "\n")
 
 ```
 
-Statystyka LM = 0.8697, p-value = 0.6474
+Statystyka LM = 0,8697, p-value = 0,6474
 
 Wniosek: Nie ma podstaw do odrzucenia H0 - brak autokorelacji
 
@@ -675,7 +674,7 @@ cat("   Statystyka BP =", round(bp_test$statistic, 4), "\n")
 cat("   p-value =", round(bp_test$p.value, 4), "\n")
 ```
 
-Statystyka BP = 3.0732, p-value = 0.2151
+Statystyka BP = 3,0732, p-value = 0,2151
 
 Wniosek: Nie ma podstaw do odrzucenia H0 - homoskedastyczność
 
@@ -688,7 +687,7 @@ cat("   p-value =", round(gq_test$p.value, 4), "\n")
 
 ```
 
-Statystyka GQ = 0.9087, p-value = 0.6996
+Statystyka GQ = 0,9087, p-value = 0,6996
 
 Wniosek: Nie ma podstaw do odrzucenia H0 - homoskedastyczność
 
@@ -720,7 +719,7 @@ VIF \< 5: brak problemów ze współliniowością
 
   vif_values <- vif(model)
   max_vif <- max(vif_values)
-  cat("Maksmalny VIF wynosi:",max_vif)
+  cat("Maksymalny VIF wynosi:",max_vif)
 
 ```
 
@@ -745,7 +744,7 @@ cat("   Statystyka F =", round(chow_test$statistic, 4), "\n")
 cat("   p-value =", round(chow_test$p.value, 4), "\n")
 ```
 
-Statystyka F = 0.9569, p-value = 0.4138
+Statystyka F = 0,9569, p-value = 0,4138
 
 Wnioski: Nie ma podstaw do odrzucenia H0 - parametry są stabilne
 
@@ -772,7 +771,7 @@ cat("   Statystyka F =", round(reset_test$statistic, 4), "\n")
 cat("   p-value =", round(reset_test$p.value, 4), "\n")
 ```
 
-Statystyka F = 0.4448, p-value = 0.6415
+Statystyka F = 0,4448, p-value = 0,6415
 
 Wnioski: Nie ma podstaw do odrzucenia H0 - poprawna postać modelu
 
@@ -790,7 +789,7 @@ cat("   Statystyka =", round(runs_test$statistic, 4), "\n")
 cat("   p-value =", round(runs_test$p.value, 4), "\n")
 ```
 
-Statystyka = -0.3671, p-value = 0.7135
+Statystyka = -0,3671, p-value = 0,7135
 
 Wnioski: Nie ma podstaw do odrzucenia H0 - reszty są losowe
 
@@ -811,7 +810,7 @@ Efekt katalizy - jedna zmienna wpływa na siłę oddziaływania innej.
  
 ```
 
-Statystyka F = 2.6483, p-value = 0.105
+Statystyka F = 2,6483, p-value = 0,105
 
 Wnioski: Brak istotnego efektu katalizy
 
@@ -1048,4 +1047,92 @@ legend("topleft", legend = c("Rzeczywiste", "Prognoza"),
        col = c("black", "red"), lwd = 2, bty = "n")
 
 ```
+## Interptretacja wyników
+
 Wskaźniki MAE = 0,082 i RMSE = 0,110 świadczą o stosunkowo niskim bezwzględnym błędzie prognoz. Natomiast MAPE = 167,3% oraz sMAPE = 153,12% są zawyżone z uwagi na dzielenie przez bardzo małe wartości zmiennej D_CLOSE (różnice logarytmiczne rentowności). W takich przypadkach bardziej reprezentatywne są miary bezwzględne.
+
+\newpage
+
+# Podsumowanie
+
+## Dane
+
+Dane: Źródłem był serwis Stooq; wstępnie uzupełniono luki interpolacją liniową, następnie podzielono na zbiór treningowy (80 %) i testowy (20 %)
+
+## Selekcja zmiennych i obróbka
+
+Zbiór początkowy liczył 11 zmiennych, po obliczeniu korelacji odrzucono te z |r|>0,8 (np. XAUUSD, WIBOR, USDPLN, 10YDEBOND, 10YUSBOND, DETAL, INFLATION).
+
+Wszystkie wybrane szeregi okazały się niestacjonarne (ADF i KPSS), więc przekształciłem je przez różnicowanie (pierwsze lub drugie rzędu), aż uzyskano stacjonarne serie.
+
+Zmienną D_UNEMPLOYMENT usunięto ze względu na praktycznie zerową wariancję.
+
+
+## Metoda Hellwiga i konstrukcja modelu
+
+Zastosowano metodę pojemności Hellwiga do wyboru najlepszego podzbioru predyktorów. Najwyższa pojemność (0,0705) wystąpiła dla kombinacji D_WIG20 i D_OIL.
+
+Ostateczny model liniowy: D_CLOSE = -0.005865 - 0.263429 × D_WIG20 + 0.155374 × D_OIL + εD_CLOSE = -0.005865 - 0.263429 × D_WIG20 + 0.155374 × D_OIL + ε.
+
+Wskaźnik R² ≈ 0,106, co oznacza, że zmienne objaśniające wyjaśniają ok. 10,6 % wariancji D_CLOSE; po uwzględnieniu stopnia swobody R²_adj ≈ 0,099 .
+
+
+## Weryfikacja założeń i testy
+
+### Normalność
+
+Normalność reszt: Shapiro-Wilk (W = 0,984; p = 0,0079) i Jarque-Bera (JB = 12,14; p = 0,0023) wskazują na odrzucenie normalności.
+
+### Autokorelacja
+
+Autokorelacja: Durbin-Watson (DW = 1,867; p = 0,282), Ljung-Box (LB = 16,93; p = 0,076) i Breusch-Godfrey (LM = 0,8697; p = 0,6474) nie wykazały autokorelacji reszt.
+
+### Heteroskedastyczność
+
+Heteroskedastyczność: Breusch-Pagan (BP = 3,073; p = 0,2151) i Goldfeld-Quandt (GQ = 0,9087; p = 0,6996) sugerują homoskedastyczność.
+
+### Współliniowość
+
+Współliniowość: maks. VIF < 5, brak problemów.
+
+### Stabilność parametrów
+
+Stabilność parametrów: test Chow (F = 0,9569; p = 0,4138) i CUSUM nie wskazały na przełom strukturalny.
+
+### Forma funkcjonalna
+
+Forma funkcjonalna: RESET (F = 0,4448; p = 0,6415) – brak dowodów na niepoprawność postaci modelu.
+
+### Losowość reszt
+
+Losowość reszt: test ragów (runs) (statystyka = −0,367; p = 0,7135) – brak systematycznych wzorców. 
+
+## Istotność zmiennych
+
+### Wyraz wolny
+
+Wyraz wolny – nieistotny (p = 0,1244).
+
+### D_WIG20
+
+D_WIG20: t = −4,503; p ≈ 1,04×10⁻⁵ – istotny (wpływ ujemny).
+
+### D_OIL
+
+D_OIL: t = 3,784; p = 0,00019 – istotny (wpływ dodatni).
+
+### Test F 
+
+Test F (Walda) dla modelu ogólnie: F = 14,42; p < 0,001 – model jako całość jest istotny.
+
+## Ocena prognoz na zbiorze testowym
+
+### MAE
+
+MAE ≈ 0,082; RMSE ≈ 0,110 – stosunkowo niewielkie bezwzględne błędy.
+
+### MAPE
+
+MAPE ≈ 167,3 %; sMAPE ≈ 153,1 % – wartości wysokie z uwagi na małe wartości D_CLOSE (logarytmiczne różnice).
+
+Wykres rzeczywistych i prognozowanych D_CLOSE pokazuje dobrą zgodność na ogólnym trendzie, choć przy gwałtownych zmianach model niedoszacowuje lub przeszacowuje momentami. 
