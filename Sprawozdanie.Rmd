@@ -117,7 +117,6 @@ Minimalna zaobserwowana wartość to 1,843 %, a maksymalna aż 13,288 %. Zakres 
 
 Pierwszy kwartyl (3,457 %) i trzeci kwartyl (6,269 %) pokazują, że połowa obserwacji mieści się w zakresie od 3,457 % do 6,269 %. To oznacza, że większość wartości koncentruje się wokół poziomu 5 %–6 %.
 
-
 ## Zmienne objaśniające
 
 ```{r , echo=FALSE}
@@ -138,15 +137,15 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
 
-Z 11 zmiennych objaśniających wybrałem 7, których wartość bezwględna korelacji nie przekracza 0.8. INTERPRTACJA WYNIIKOW do zmiany
+Z 11 zmiennych objaśniających wybrałem 7, których wartość bezwględna korelacji nie przekracza 0.8. Dodatkowo usuwam zmienną "INFLATION" abym mógł zlogarytmować dane.
 
 \newpage
 
 ### Macierz korlelacji po usunięciu zmiennych
 
 ```{r corrplot2, fig.width=20, fig.height=20, echo=FALSE}
-data <- data[, !(colnames(data) %in% c("XAUUSD","WIBOR","10YDEBOND","10YUSBOND","DETAL","USDPLN"))]
-data_test <- data_test[, !(colnames(data_test) %in% c("XAUUSD","WIBOR","10YDEBOND","10YUSBOND","DETAL","USDPLN"))]
+data <- data[, !(colnames(data) %in% c("XAUUSD","WIBOR","10YDEBOND","10YUSBOND","DETAL","USDPLN","INFLATION"))]
+data_test <- data_test[, !(colnames(data_test) %in% c("XAUUSD","WIBOR","10YDEBOND","10YUSBOND","DETAL","USDPLN","INFLATION","UNEMPLOYMENT","PMI","S&P500"))]
 data <- data[1:train_size, , drop = FALSE]
 
 
@@ -158,6 +157,13 @@ cor_matrix <- cor(data, use = "pairwise.complete.obs", method = "pearson")
            order = "alphabet",
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
+```
+
+### Logarytmowanie danych
+
+```{r}
+data<-log(data)
+data_test<-log(data_test)
 ```
 
 \newpage
@@ -173,6 +179,7 @@ check_stationarity <- function(x) {
 }
 
 non_stationary_vars <- c()
+non_stationary_vars_test <- c()
 
 for (var in colnames(data)) {
   series <- ts(data[[var]])
@@ -181,9 +188,13 @@ for (var in colnames(data)) {
   }
 }
 
+for (var in colnames(data_test)) {
+  series <- ts(data_test[[var]])
+  if (!check_stationarity(series)) {
+    non_stationary_vars_test <- c(non_stationary_vars_test, var)
+  }
+}
 ```
-
-
 
 ## Sprawdzenie niestacjonarności zmiennych
 
@@ -204,7 +215,7 @@ knitr::kable(stationarity_df, row.names = FALSE)
 
 ```
 
-Wszystkie zmienne w pierwotnej postaci (zarówno CLOSE, jak i 6 zmiennych objaśniających: INFLATION, WIG20, S&P500, UNEMPLOYMENT, PMI, OIL) okazały się niestacjonarne (wyniki testów ADF wskazywały p-value > 0,05 lub wartość statystyki testowej wyższa od wartości krytycznej; KPSS p-value < 0,05).
+Wszystkie zmienne w pierwotnej postaci (zarówno CLOSE, jak i 5 zmiennych objaśniających: WIG20, S&P500, UNEMPLOYMENT, PMI, OIL) okazały się niestacjonarne (wyniki testów ADF wskazywały p-value \> 0,05 lub wartość statystyki testowej wyższa od wartości krytycznej; KPSS p-value \< 0,05).
 
 Oznacza to, że w danych występuje wspólny trend lub efekt niestacjonarności, co skłania do zastosowania różnicowania, by usunąć jednostkowe pierwiastki i otrzymać procesy stacjonarne
 
@@ -300,6 +311,30 @@ remove_nonstationarity <- function(data, non_stationary_vars, max_diff = 2,
   ))
 }
 
+remove_nonstationarity_test <- function(data_test, diff_info) {
+  transformed_data <- list()
+  max_diff_order <- max(sapply(diff_info, function(x) x$order))
+
+  for (var in names(diff_info)) {
+    if (!var %in% colnames(data_test)) next
+    order <- diff_info[[var]]$order
+    newname <- diff_info[[var]]$name
+    x <- data_test[[var]]
+
+    if (order == 0) {
+      transformed_data[[newname]] <- x
+    } else {
+      transformed_data[[newname]] <- diff(x, differences = order)
+    }
+  }
+
+  final_df <- as.data.frame(lapply(transformed_data, function(x) {
+    c(rep(NA, max_diff_order), x)[1:(nrow(data_test) + max_diff_order)]
+  }))
+
+  final_df <- final_df[complete.cases(final_df), ]
+  return(final_df)
+}
 ```
 
 ```{r wywołanie_funkcji, echo=FALSE, warning=FALSE, message=FALSE, comment=NA, fig.align='center', fig.width=10, fig.height=6}
@@ -322,20 +357,10 @@ result <- remove_nonstationarity(
 
 data_stationary <- result$data
 diff_info <- result$diff_info
-plots_before <- result$plots_before
-plots_after <- result$plots_after
 
-for (var in names(diff_info)) {
-  info <- diff_info[[var]]
-  plot_before <- plots_before[[var]]
-  plot_after <- plots_after[[var]]
-  
-  gridExtra::grid.arrange(
-    plot_before, plot_after,
-    ncol = 2,
-    top = NULL
-  )
-}
+
+
+
 ```
 
 ## Ponowne sprawdzenie niestacjonarności zmiennych
@@ -356,11 +381,9 @@ stationarity_df <- data.frame(
 knitr::kable(stationarity_df, row.names = FALSE)
 ```
 
-
-Wszystkie zmienne przekształcone do postaci różnicowej (D_CLOSE, D_INFLATION, D_WIG20, D2_S.P500, D_UNEMPLOYMENT, D_PMI, D_OIL) okazały się stacjonarne (test AD-Fuller zakończył się odrzuceniem hipotezy o istnieniu pierwiastka jednostkowego, a test KPSS nie wskazał na niestacjonarność).
+Wszystkie zmienne przekształcone do postaci różnicowej (D_CLOSE, D_WIG20, D2_S.P500, D_UNEMPLOYMENT, D_PMI, D_OIL) okazały się stacjonarne (test AD-Fuller zakończył się odrzuceniem hipotezy o istnieniu pierwiastka jednostkowego, a test KPSS nie wskazał na niestacjonarność).
 
 Oznacza to, że proces różnicowania był wystarczający – w dalszej części modelu możemy bezpiecznie użyć tych stacjonarnych serii jako zmiennych w regresji liniowej.
-
 
 ## Sprawdzenie korelacji po usunięciu niestacjonarności
 
@@ -374,7 +397,6 @@ cor_matrix <- cor(data_stationary, use = "pairwise.complete.obs", method = "pear
            addCoef.col = "black", 
            tl.col = "black", tl.cex = 2.5, cl.cex = 2.5, number.cex=2.6)
 ```
-
 
 ## Usunięcie zmiennych o zerowej wariancji
 
@@ -392,12 +414,12 @@ for (col_name in colnames(data_stationary)) {
 
 #usuwam zmienne o prawie 0 wariancji i helwwig spada
 
-data_stationary <- data_stationary[, !(colnames(data_stationary) %in% c("D_UNEMPLOYMENT","D_INFLATION"))]
+data_stationary <- data_stationary[, !(colnames(data_stationary) %in% c("D2_UNEMPLOYMENT"))]
 
 
 ```
 
-Z uwagi na bardzo niską wariancję D_UNEMPLOYMENT i D_INFLATION zdecydowałem się usunąć te zmienne, bo nie wnoszą istotnej zmienności do zestawu predyktorów.
+Z uwagi na bardzo niską wariancję D_UNEMPLOYMENT zdecydowałem się usunąć tą zmienną, bo nie wnosi istotnej zmienności do zestawu predyktorów.
 
 ### Po usunięciu
 
@@ -465,7 +487,7 @@ Y_stat <- data_stationary["D_CLOSE"]
 hellwig_result <- hellwig_method_original(Y_stat, X_stat)
 ```
 
-```{r, echo=FALSE, warning=FALSE, message=FALSE, comment = NA}
+```{r, echo=FALSE, warning=FALSE, message=NA, comment = NA}
 najlepsza_kombinacja_string <- hellwig_result$Zmienne[1]
 best_hellwig_vars <- unlist(strsplit(najlepsza_kombinacja_string, ", "))
 cat("Zmienne składowe w najlepszej kombinacji:\n")
@@ -478,14 +500,20 @@ zmienne_objaśniające_do_modelu <- unlist(strsplit(najlepsza_kombinacja_string,
 
 cols_to_keep <- c(best_hellwig_vars, "D_CLOSE")
 data_stationary <- data_stationary[, cols_to_keep]
+
+data_test_stationary <- remove_nonstationarity_test(data_test, diff_info)
+
+
+data_test_stationary <- data_test_stationary[, cols_to_keep]
 ```
 
-Pojemność Hellwiga dla tej kombinacji wynosi 0,0741. Oznacza to, że te dwie zmienne razem wyjaśniają około 7,41 % wariancji zmiennej D_CLOSE.
+Pojemność Hellwiga dla tej kombinacji wynosi 0,0705. Najlepsza kombinacja zmiennych objaśniających składa się ze zmiennych D_WIG20 orz D_OIL
+
 \newpage
 
 # Tworzenie modelu ekonometrycznego
 
-```{r message=FALSE, comment=NA}
+```{r message=FALSE, comment=NA, echo=FALSE}
 
 formula_modelu <- reformulate(best_hellwig_vars, response = "D_CLOSE")
 
@@ -494,15 +522,21 @@ model <- lm(formula_modelu, data = data_stationary)
 print(summary(model))
 ```
 
-Statystyka F = 13,66 (df = 2 i 243), p-value ≈ 2,388×10⁻⁶. Oznacza to, że jako całość model jest istotny statystycznie – przynajmniej jedna ze zmiennych objaśniających przyczynia się do wyjaśnienia zmienności D_CLOSE
+Statystyka F = 14,42 (df = 2 i 243), p-value ≈ 1,211×10⁻⁶. Oznacza to, że jako całość model jest istotny statystycznie – przynajmniej jedna ze zmiennych objaśniających przyczynia się do wyjaśnienia zmienności D_CLOSE
 
-R-kwadrat: 0,1011 → model wyjaśnia tylko około 10,11 % zmienności zmiennej D_CLOSE. Po skorygowaniu R²_adj = 0,0937. Tę wartość można uznać za dosyć niską (model w obecnej formie jest słaby), co sugeruje, że istnieje wiele innych czynników wpływających na zmiany rentowności obligacji, których nie uwzględniono.
+R-kwadrat: 0,1061 → model wyjaśnia tylko około 10,61 % zmienności zmiennej D_CLOSE. Po skorygowaniu R²_adj = 0,09872. Tę wartość można uznać za dosyć niską (model w obecnej formie jest słaby), co sugeruje, że istnieje wiele innych czynników wpływających na zmiany rentowności obligacji, których nie uwzględniono.
 
 \newpage
 
-# Niby TEST
+# Testowanie modelu
 
 ## Testowanie normalności rozkładu reszt
+
+Testy normalności sprawdzają czy reszty mają rozkład normalny.
+
+H0: Reszty mają rozkład normalny\
+H1: Reszty nie mają rozkładu normalny\
+Poziom istotności: α = 0.05
 
 ```{r, echo=FALSE}
 
@@ -511,39 +545,40 @@ residuals_model <- residuals(model)
 fitted_values <- fitted(model)
 n_obs <- length(residuals_model)
 n_params <- length(coef(model))
-cat("TEORIA: Testy normalności sprawdzają czy reszty mają rozkład normalny.\n")
-cat("H0: Reszty mają rozkład normalny\n")
-cat("H1: Reszty nie mają rozkładu normalnego\n")
-cat("Poziom istotności: α = 0.05\n\n")
+
 ```
 
 ### Test Shapiro-Wilka
 
-```{r, echo=FALSE}
+```{r, echo=FALSE,  comment=NA}
 
   shapiro_test <- shapiro.test(residuals_model)
   cat("   Statystyka W =", round(shapiro_test$statistic, 4), "\n")
   cat("   p-value =", round(shapiro_test$p.value, 4), "\n")
-  cat("   Wniosek:", ifelse(shapiro_test$p.value > 0.05, 
-                           "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
-                           "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+  
 ```
+
+Statystyka W = 0.9842, p-value = 0.0079
+
+Wniosek: Odrzucamy H0 - reszty nie są normalne
 
 ### Test Jarque-Bera
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, comment=NA,}
 # Test Jarque-Bera
 jb_test <- jarque.bera.test(residuals_model)
 cat("   Statystyka JB =", round(jb_test$statistic, 4), "\n")
 cat("   p-value =", round(jb_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(jb_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - reszty są normalne",
-                         "Odrzucamy H0 - reszty nie są normalne"), "\n\n")
+
 ```
+
+Statystyka JB = 12.1445 p-value = 0.0023
+
+Wniosek: Odrzucamy H0 - reszty nie są normalne
 
 ### Wykresy normalności
 
-```{r, echo=FALSE}
+```{r, comment=NA, echo=FALSE}
 
 par(mfrow = c(2, 2))
 hist(residuals_model, breaks = 20, prob = TRUE, main = "Histogram reszt", 
@@ -561,161 +596,105 @@ qqline(residuals_model, col = "red")
 
 ```
 
+Dane zostały już zlogarytmowane. Próba usunięcia braku normalnośći została wykonana. Nie udało się wyeliminować tego problemu
+
 ## Testowanie autokorealcji
 
-```{r, echo=FALSE}
-cat("TEORIA: Autokorelacja oznacza korelację między resztami w różnych okresach.\n")
-cat("H0: Brak autokorelacji reszt\n")
-cat("H1: Występuje autokorelacja reszt\n\n")
+Autokorelacja oznacza korelację między resztami w różnych okresach
 
-```
+H0: Brak autokorelacji reszt\
+H1: Występuje autokorelacja reszt
 
 ### Test Durbina-Watsona
 
-```{r, echo=FALSE}
+```{r,  comment=NA,echo=FALSE}
 
 dw_test <- durbinWatsonTest(model)
-cat("1. TEST DURBINA-WATSONA:\n")
+
 cat("   Statystyka DW =", round(dw_test$dw, 4), "\n")
 cat("   p-value =", round(dw_test$p, 4), "\n")
-cat("   Wniosek:", ifelse(dw_test$p > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
-                         "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+
 ```
+
+Statystyka DW = 1.8667, p-value = 0.282
+
+Wniosek: Nie ma podstaw do odrzucenia H0 - brak autokorelacji
 
 ### Test Ljunga-Boxa
 
-```{r, echo=FALSE}
+```{r, comment=NA, echo=FALSE}
 
 ljung_test <- Box.test(residuals_model, lag = min(10, floor(n_obs/5)), type = "Ljung-Box")
 cat("2. TEST LJUNGA-BOXA:\n")
 cat("   Statystyka LB =", round(ljung_test$statistic, 4), "\n")
 cat("   p-value =", round(ljung_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(ljung_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
-                         "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
 ```
+
+Statystyka LB = 16.9273, p-value = 0.076
+
+Wniosek: Nie ma podstaw do odrzucenia H0 - brak autokorelacji
 
 ### Test Breuscha-Godfreya
 
-```{r, echo=FALSE}
+```{r,  comment=NA,echo=FALSE}
 
 bg_test <- bgtest(model, order = 2)
-cat("3. TEST BREUSCHA-GODFREYA:\n")
 cat("   Statystyka LM =", round(bg_test$statistic, 4), "\n")
 cat("   p-value =", round(bg_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(bg_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - brak autokorelacji",
-                         "Odrzucamy H0 - występuje autokorelacja"), "\n\n")
+
 ```
+
+Statystyka LM = 0.8697, p-value = 0.6474
+
+Wniosek: Nie ma podstaw do odrzucenia H0 - brak autokorelacji
 
 ### Wykres autokorelacji
 
-```{r, echo=FALSE}
+```{r,  comment=NA,echo=FALSE}
 
 acf(residuals_model, main = "Funkcja autokorelacji reszt", lag.max = 20)
 
 ```
 
-### Model ARMA na resztach + diagnostyka
-
-```{r, echo=FALSE}
-
-D_log_CLOSE_ts <- ts(data_stationary$D_CLOSE)
-D_log_WIG20_ts <- ts(data_stationary$D_WIG20)
-D_PMI_ts <- ts(data_stationary$D_PMI)
-
-
-xreg_hellwig <- cbind(D_log_WIG20_ts, D_PMI_ts)
-
-
-model_arimax <- auto.arima(
-  D_log_CLOSE_ts,
-  xreg = xreg_hellwig,
-  d = 0,
-  max.p = 5,
-  max.q = 5,
-  seasonal = FALSE,
-  stepwise = FALSE,
-  approximation = FALSE,
-  trace = FALSE
-)
-
-cat("\nMODEL ARIMAX (Hellwig - STAŁY):\n")
-print(summary(model_arimax))
-
-
-residuals_model <- residuals(model_arimax)
-fitted_values <- fitted(model_arimax)
-n_obs <- length(residuals_model)
-```
-
-### Diagnostyka reszt modelu ARMA
-
-```{r , echo=FALSE}
-cat("WYKRES I TESTY DLA RESZT MODEL ARMA:")
-checkresiduals(model_arimax)
-```
-
-### Test Ljunga-Boxa dla reszt ARMA
-
-```{r , echo=FALSE}
-lb_resid <- Box.test(residuals(model_arimax), lag = 12, type = "Ljung-Box")
-cat("TEST LJUNGA-BOXA (reszty ARIMAX):\n")
-cat("   Statystyka =", round(lb_resid$statistic, 4), "\n")
-cat("   p-value =", round(lb_resid$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(lb_resid$p.value > 0.05,
-                        "Brak autokorelacji reszt po ARIMAX (SPEŁNIONE)",
-                        "Występuje autokorelacja reszt po ARIMAX (NIESPEŁNIONE)"), "\n")
-
-```
+Wnioski: Udało się osiągnąć brak autokorelacji.
 
 ## Badanie heteroskedastyczności
 
-```{r, echo=FALSE}
-cat("TEORIA: Heteroskedastyczność oznacza niestałą wariancję składnika losowego.\n")
-cat("H0: Homoskedastyczność (stała wariancja)\n")
-cat("H1: Heteroskedastyczność (niestała wariancja)\n\n")
-```
+Heteroskedastyczność oznacza niestałą wariancję składnika losowego.
+
+H0: Homoskedastyczność (stała wariancja)\
+H1: Heteroskedastyczność (niestała wariancja)
 
 ### Test Breuscha-Pagana
 
-```{r, echo=FALSE}
+```{r,  comment=NA,echo=FALSE}
 
 bp_test <- bptest(model)
-cat("1. TEST BREUSCHA-PAGANA:\n")
+
 cat("   Statystyka BP =", round(bp_test$statistic, 4), "\n")
 cat("   p-value =", round(bp_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(bp_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
-                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
 ```
 
-### Test White
+Statystyka BP = 3.0732, p-value = 0.2151
 
-```{r, echo=FALSE}
-#white_test <- bptest(model, ~ fitted(model) + I(fitted(model)^2))
-#cat("   Statystyka White =", round(white_test$statistic, 4), "\n")
-#cat("   p-value =", round(white_test$p.value, 4), "\n")
-#cat("   Wniosek:", ifelse(white_test$p.value > 0.05, 
-#                        "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
-#                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
-```
+Wniosek: Nie ma podstaw do odrzucenia H0 - homoskedastyczność
 
 ### Test Goldfelda-Quandta
 
-```{r, echo=FALSE}
+```{r, comment=NA, echo=FALSE}
 gq_test <- gqtest(model, order.by = fitted(model))
 cat("   Statystyka GQ =", round(gq_test$statistic, 4), "\n")
 cat("   p-value =", round(gq_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(gq_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - homoskedastyczność",
-                         "Odrzucamy H0 - heteroskedastyczność"), "\n\n")
+
 ```
+
+Statystyka GQ = 0.9087, p-value = 0.6996
+
+Wniosek: Nie ma podstaw do odrzucenia H0 - homoskedastyczność
 
 ### Wykresy heteroskedastyczności
 
-```{r, echo=FALSE}
+```{r,  comment=NA,echo=FALSE}
 par(mfrow = c(2, 2))
 plot(fitted_values, residuals_model, main = "Reszty vs Wartości dopasowane", 
      xlab = "Wartości dopasowane", ylab = "Reszty")
@@ -725,63 +704,54 @@ plot(fitted_values, abs(residuals_model), main = "|Reszty| vs Wartości dopasowa
      xlab = "Wartości dopasowane", ylab = "|Reszty|")
 ```
 
+Wnioski: Składnik losowy ma w tym modelu stałą wariancję.
+
 ## Testowanie współliniowości
 
 ### Test VIF
 
-```{r, echo=FALSE}
+Współliniowość oznacza wysoką korelację między zmiennymi objaśniającymi.
 
-cat("TEORIA: Współliniowość oznacza wysoką korelację między zmiennymi objaśniającymi.\n")
-cat("VIF > 10: poważna współliniowość\n")
-cat("VIF > 5: umiarkowana współliniowość\n")
-cat("VIF < 5: brak problemów ze współliniowością\n\n")
+VIF \> 10: poważna współliniowość\
+VIF \> 5: umiarkowana współliniowość\
+VIF \< 5: brak problemów ze współliniowością
+
+```{r,  comment=NA,echo=FALSE}
 
   vif_values <- vif(model)
-  cat("WSPÓŁCZYNNIKI VIF:\n")
-  for(i in 1:length(vif_values)) {
-    cat("  ", names(vif_values)[i], ":", round(vif_values[i], 3))
-    if(vif_values[i] > 10) {
-      cat(" *** POWAŻNA WSPÓŁLINIOWOŚĆ ***")
-    } else if(vif_values[i] > 5) {
-      cat(" ** UMIARKOWANA WSPÓŁLINIOWOŚĆ **")
-    } else {
-      cat(" - OK")
-    }
-    cat("\n")
-  }
-  
   max_vif <- max(vif_values)
-  cat("\nWNIOSEK:", ifelse(max_vif < 5, "Brak problemów ze współliniowością",
-                          ifelse(max_vif < 10, "Umiarkowana współliniowość - rozważ usunięcie zmiennej",
-                                 "Poważna współliniowość - koniecznie usuń zmienną")), "\n")
+  cat("Maksmalny VIF wynosi:",max_vif)
 
 ```
+
+Wnioski: Maksmalny VIF \< 5 więc brak problemów ze współliniowością
 
 ## Testowanie stabilności parametrów
 
 ### Test Chowa
 
-```{r, echo=FALSE}
-cat("TEORIA: Test Chowa sprawdza czy parametry modelu są stabilne w czasie.\n")
-cat("H0: Parametry są stabilne (brak przełomu strukturalnego)\n")
-cat("H1: Parametry nie są stabilne (występuje przełom strukturalny)\n\n")
+Test Chowa sprawdza czy parametry modelu są stabilne w czasie.
 
-# Punkt przełomu w środku próby
+H0: Parametry są stabilne\
+H1: Parametry nie są stabilne (występuje przełom strukturalny)
+
+Punkt przełomu jest w środku próby
+
+```{r, comment=NA, echo=FALSE}
 breakpoint <- floor(n_obs / 2)
 
-# Test Chowa
 chow_test <- sctest(formula_modelu, data = data_stationary, type = "Chow", point = breakpoint)
-cat("TEST CHOWA (punkt przełomu w obserwacji", breakpoint, "):\n")
 cat("   Statystyka F =", round(chow_test$statistic, 4), "\n")
 cat("   p-value =", round(chow_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(chow_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - parametry są stabilne",
-                         "Odrzucamy H0 - brak stabilności parametrów"), "\n\n")
 ```
+
+Statystyka F = 0.9569, p-value = 0.4138
+
+Wnioski: Nie ma podstaw do odrzucenia H0 - parametry są stabilne
 
 ### Test CUSUM
 
-```{r, echo=FALSE}
+```{r, comment=NA, echo=FALSE}
 cusum_test <- efp(formula_modelu, data = data_stationary, type = "Rec-CUSUM")
 plot(cusum_test, main = "Test CUSUM stabilności parametrów")
 
@@ -791,100 +761,76 @@ plot(cusum_test, main = "Test CUSUM stabilności parametrów")
 
 ### Test RESET Ramseya
 
-```{r, echo=FALSE}
-cat("TEORIA: Test RESET sprawdza czy postać funkcyjna modelu jest poprawna.\n")
-cat("H0: Model ma poprawną postać funkcyjną\n")
-cat("H1: Model ma niepoprawną postać funkcyjną\n\n")
+Test RESET sprawdza czy postać funkcyjna modelu jest poprawna.
 
+H0: Model ma poprawną postać funkcyjną\
+H1: Model ma niepoprawną postać funkcyjną
+
+```{r,  comment=NA,echo=FALSE}
 reset_test <- resettest(model, power = 2:3, type = "fitted")
-cat("1. TEST RESET RAMSEYA:\n")
 cat("   Statystyka F =", round(reset_test$statistic, 4), "\n")
 cat("   p-value =", round(reset_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(reset_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - poprawna postać modelu",
-                         "Odrzucamy H0 - niepoprawna postać modelu"), "\n\n")
 ```
 
-### Test liczby serii (runs test)
+Statystyka F = 0.4448, p-value = 0.6415
 
-```{r , echo=FALSE}
-cat("TEORIA: Test sprawdza czy reszty są losowo rozłożone.\n")
-cat("H0: Reszty są losowo rozłożone\n")
-cat("H1: Reszty wykazują systematyczne wzorce\n\n")
+Wnioski: Nie ma podstaw do odrzucenia H0 - poprawna postać modelu
 
-# Przekształć reszty na znaki (+ lub -)
+### Test liczby serii
+
+Test sprawdza czy reszty są losowo rozłożone.
+
+H0: Reszty są losowo rozłożone\
+H1: Reszty wykazują systematyczne wzorce
+
+```{r ,  comment=NA,echo=FALSE}
 signs <- ifelse(residuals_model > 0, 1, 0)
 runs_test <- runs.test(as.factor(signs))
 cat("   Statystyka =", round(runs_test$statistic, 4), "\n")
 cat("   p-value =", round(runs_test$p.value, 4), "\n")
-cat("   Wniosek:", ifelse(runs_test$p.value > 0.05, 
-                         "Nie ma podstaw do odrzucenia H0 - reszty są losowe",
-                         "Odrzucamy H0 - reszty wykazują wzorce"), "\n\n")
-
 ```
+
+Statystyka = -0.3671, p-value = 0.7135
+
+Wnioski: Nie ma podstaw do odrzucenia H0 - reszty są losowe
 
 ## Badanie efektu katalizy
 
 ### Test F
 
-```{r , echo=FALSE}
-cat("TEORIA: Efekt katalizy - jedna zmienna wpływa na siłę oddziaływania innej.\n")
-cat("Sprawdzamy czy interakcje między zmiennymi są istotne.\n\n")
+Efekt katalizy - jedna zmienna wpływa na siłę oddziaływania innej.
 
-  # Model z interakcjami
+```{r ,  comment=NA,echo=FALSE}
   interaction_vars <- paste(best_hellwig_vars, collapse = " * ")
   formula_interaction <- as.formula(paste("D_CLOSE ~", interaction_vars))
   model_interaction <- lm(formula_interaction, data = data_stationary)
   
-  # Test F dla istotności interakcji
   anova_result <- anova(model, model_interaction)
-  cat("TEST F DLA INTERAKCJI:\n")
   cat("   Statystyka F =", round(anova_result$F[2], 4), "\n")
   cat("   p-value =", round(anova_result$`Pr(>F)`[2], 4), "\n")
-  cat("   Wniosek:", ifelse(anova_result$`Pr(>F)`[2] > 0.05, 
-                           "Brak istotnego efektu katalizy",
-                           "Występuje istotny efekt katalizy"), "\n\n")
-  
-  # Wyświetl współczynniki interakcji
-  cat("WSPÓŁCZYNNIKI INTERAKCJI:\n")
-  interaction_summary <- summary(model_interaction)
-  coef_table <- interaction_summary$coefficients
-  interaction_terms <- rownames(coef_table)[grep(":", rownames(coef_table))]
-  
-  if(length(interaction_terms) > 0) {
-    for(term in interaction_terms) {
-      p_val <- coef_table[term, "Pr(>|t|)"]
-      cat("  ", term, ": p-value =", round(p_val, 4))
-      if(p_val < 0.05) cat(" ***")
-      else if(p_val < 0.1) cat(" *")
-      cat("\n")
-    }
-  }
  
 ```
+
+Statystyka F = 2.6483, p-value = 0.105
+
+Wnioski: Brak istotnego efektu katalizy
 
 ## Badanie koincydencji
 
 ### Porównanie R²
 
-```{r , echo=FALSE}
-cat("TEORIA: Koincydencja - zmienna objaśniająca ma wpływ jedynie w określonych okresach.\n")
-cat("Sprawdzamy stabilność parametrów w różnych podokresach.\n\n")
+Koincydencja - zmienna objaśniająca ma wpływ jedynie w określonych okresach.
 
-# Podział próby na tercyle
+```{r ,  comment=NA,echo=FALSE}
 tercile_1 <- floor(n_obs / 3)
 tercile_2 <- floor(2 * n_obs / 3)
-
-# Modele dla podokresów
 data_1 <- data_stationary[1:tercile_1, ]
 data_2 <- data_stationary[(tercile_1+1):tercile_2, ]
 data_3 <- data_stationary[(tercile_2+1):n_obs, ]
-
 model_1 <- lm(formula_modelu, data = data_1)
 model_2 <- lm(formula_modelu, data = data_2)
 model_3 <- lm(formula_modelu, data = data_3)
 
-cat("ANALIZA STABILNOŚCI PARAMETRÓW W PODOKRESACH:\n\n")
 
 
 cat("Współczynniki determinacji:\n")
@@ -909,30 +855,27 @@ for(param in names(coef_1)) {
   diff_23 <- abs(coef_2[param] - coef_3[param])
   diff_13 <- abs(coef_1[param] - coef_3[param])
   
-  if(max(diff_12, diff_23, diff_13) > abs(coef_1[param]) * 0.5) {
-    cat("  *** MOŻLIWA KOINCYDENCJA - duże różnice między okresami ***\n")
-  }
   cat("\n")
 }
 ```
 
+\newpage
+
 # Podsumowanie wyników
 
-```{r , echo=FALSE}
-cat("WYNIKI TESTÓW DIAGNOSTYCZNYCH:\n\n")
-lb_resid
-# Zbierz wyniki testów
+```{r , comment=NA, echo=FALSE}
+
 test_results <- data.frame(
   Test = c("Normalność (Jarque-Bera)", "Autokorelacja (Ljung-Box)", 
            "Heteroskedastyczność (Breusch-Pagan)", "Współliniowość (max VIF)",
            "Stabilność (Chow)", "Postać modelu (RESET)"),
-  Statystyka = c(round(jb_test$statistic, 3), round(lb_resid$statistic, 3),
+  Statystyka = c(round(jb_test$statistic, 3), round(ljung_test$statistic, 3),
                 round(bp_test$statistic, 3), ifelse(length(best_hellwig_vars) > 1, round(max(vif_values), 3), "N/A"),
                 round(chow_test$statistic, 3), round(reset_test$statistic, 3)),
-  p_value = c(round(jb_test$p.value, 3), round(lb_resid$p.value, 3),
+  p_value = c(round(jb_test$p.value, 3), round(ljung_test$p.value, 3),
              round(bp_test$p.value, 3), "N/A", round(chow_test$p.value, 3), round(reset_test$p.value, 3)),
   Wynik = c(ifelse(jb_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
-           ifelse(lb_resid$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
+           ifelse(ljung_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
            ifelse(bp_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
            ifelse(length(best_hellwig_vars) > 1, ifelse(max(vif_values) < 5, "SPEŁNIONE", "NIESPEŁNIONE"), "SPEŁNIONE"),
            ifelse(chow_test$p.value > 0.05, "SPEŁNIONE", "NIESPEŁNIONE"),
@@ -945,206 +888,88 @@ print(test_results)
 failed_tests <- sum(test_results$Wynik == "NIESPEŁNIONE")
 total_tests <- nrow(test_results)
 
-cat("\n=== OGÓLNA OCENA MODELU ===\n")
 cat("Spełnione założenia:", total_tests - failed_tests, "/", total_tests, "\n")
 cat("Niespełnione założenia:", failed_tests, "/", total_tests, "\n\n")
 
-if(failed_tests == 0) {
-  cat("MODEL SPEŁNIA WSZYSTKIE PODSTAWOWE ZAŁOŻENIA\n")
-} else if(failed_tests <= 2) {
-  cat("MODEL SPEŁNIA WIĘKSZOŚĆ ZAŁOŻEŃ - wymagane drobne korekty\n")
-} else {
-  cat("MODEL WYMAGA ISTOTNYCH POPRAWEK - niespełnia kluczowych założeń\n")
-}
 
-cat("\n=== REKOMENDACJE ===\n")
-if(jb_test$p.value <= 0.05) {
-  cat("• Rozważ transformację zmiennych (logarytmowanie) ze względu na brak normalności reszt\n")
-}
-if(lb_resid$p.value <= 0.05) {
-  cat("• Dodaj zmienne opóźnione lub rozważ model ARIMA ze względu na autokorelację\n")
-}
-if(bp_test$p.value <= 0.05) {
-  cat("• Użyj robustnych błędów standardowych ze względu na heteroskedastyczność\n")
-}
-if(length(best_hellwig_vars) > 1 && max(vif_values) >= 5) {
-  cat("• Usuń zmienne o wysokim VIF ze względu na współliniowość\n")
-}
-if(chow_test$p.value <= 0.05) {
-  cat("• Rozważ model ze zmiennymi strukturalnymi ze względu na niestabilność parametrów\n")
-}
-if(reset_test$p.value <= 0.05) {
-  cat("• Zmień postać funkcyjną modelu (dodaj nieliniowości)\n")
-}
-
-cat("\n", paste(rep("=", 60), collapse=""), "\n")
-cat("KONIEC WERYFIKACJI MODELU\n")
-cat(paste(rep("=", 60), collapse=""), "\n")
 ```
 
+# Ocena istotności zmiennych
 
+## Test t-Studenta dla poszczególnych parametrów
 
+Test t-Studenta jest wykorzystywany do oceny **istotności statystycznej** poszczególnych współczynników regresji.\
+Dla każdego parametru testuje się hipotezę zerową H0, że dany współczynnik jest równy zero co oznacza, że zmienna objaśniająca nie ma liniowego wpływu na zmienną zależną wobec hipotezy alternatywnej H1, że współczynnik jest różny od zera.
 
+```{r, echo=FALSE, comment=NA}
 
-
-
-
-
-
-
-### TESTUWENCJA
-
-## OCENA ISTOTNOŚCI ZMIENNYCH
-
-### Test t-Studenta dla poszczególnych parametrów
-```{r, echo=FALSE}
-
-
-
-cat("H0: βi = 0 (parametr nie jest istotny statystycznie)\n")
-cat("H1: βi ≠ 0 (parametr jest istotny statystycznie)\n")
-cat("Poziom istotności: α = 0.05\n\n")
-
-# Podsumowanie modelu
 model_summary <- summary(model)
-print(model_summary)
-
-# Szczegółowa analiza każdego parametru
 coefficients_df <- as.data.frame(model_summary$coefficients)
-coefficients_df$Variable <- rownames(coefficients_df)
-coefficients_df$Significance <- ifelse(coefficients_df$`Pr(>|t|)` < 0.001, "***",
-                                     ifelse(coefficients_df$`Pr(>|t|)` < 0.01, "**",
-                                           ifelse(coefficients_df$`Pr(>|t|)` < 0.05, "*",
-                                                 ifelse(coefficients_df$`Pr(>|t|)` < 0.1, ".", ""))))
+names(coefficients_df) <- c("Estimate", "Std. Error", "t value", "Pr(>|t|)")
 
-cat("\nTABELA WYNIKÓW TESTÓW t-STUDENTA:\n")
-cat("================================================================\n")
-for(i in 1:nrow(coefficients_df)) {
-  var_name <- coefficients_df$Variable[i]
-  estimate <- round(coefficients_df$Estimate[i], 6)
-  std_error <- round(coefficients_df$`Std. Error`[i], 6)
-  t_value <- round(coefficients_df$`t value`[i], 4)
-  p_value <- coefficients_df$`Pr(>|t|)`[i]
-  significance <- coefficients_df$Significance[i]
-  
-  cat("Zmienna:", var_name, "\n")
-  cat("  Współczynnik:", estimate, "\n")
-  cat("  Błąd standardowy:", std_error, "\n")
-  cat("  Statystyka t:", t_value, "\n")
-  cat("  p-value:", if(p_value < 0.001) "< 0.001" else round(p_value, 4), "\n")
-  cat("  Istotność:", significance, "\n")
-  cat("  Wniosek:", ifelse(p_value < 0.05, 
-                          "PARAMETR ISTOTNY STATYSTYCZNIE", 
-                          "PARAMETR NIEISTOTNY STATYSTYCZNIE"), "\n")
+
+param_names <- rownames(coefficients_df)
+param_tvalues <- coefficients_df$`t value`
+param_pvalues <- coefficients_df$`Pr(>|t|)`
+significance_level <- 0.05 # Standardowy poziom istotności alfa
+
+for(i in 1:length(param_names)) {
+  param_name <- param_names[i]
+  t_val <- param_tvalues[i]
+  p_val <- param_pvalues[i]
+  is_significant <- p_val < significance_level
+  signif_code <- ""
+  if (p_val < 0.001) {
+    signif_code <- "***"
+  } else if (p_val < 0.01) {
+    signif_code <- "**"
+  } else if (p_val < 0.05) {
+    signif_code <- "*"
+  } else if (p_val < 0.1) {
+    signif_code <- "."
+  }
 }
 ```
+Parametr: **Wyraz wolny**\
+  Wartość t: -1.5419 \
+  Wartość p: 0.1244  \
+  Wniosek: Współczynnik jest statystycznie nieistotny na poziomie 5%. Brak wystarczających dowodów, aby odrzucić hipotezę zerową, co oznacza, że wyraz wolny prawdopodobnie nie ma istotnego liniowego wpływu na D_CLOSE.\
 
-### Test Walda (test łącznej istotności)
+Parametr: **D_WIG20**\
+  Wartość t: -4.503 \
+  Wartość p: 1.04e-05 *** \
+  Wniosek: Współczynnik jest **statystycznie istotny** na poziomie 5%. Odrzucamy hipotezę zerową, co oznacza, że zmienna D_WIG20 ma istotny wpływ na zmienną D_CLOSE.\
+
+Parametr: **D_OIL**\
+  Wartość t: 3.7843 \
+  Wartość p: 0.0001942 *** \
+  Wniosek: Współczynnik jest **statystycznie istotny** na poziomie 5%. Odrzucamy hipotezę zerową, co oznacza, że zmienna D_OIL ma istotny wpływ na zmienną D_CLOSE.\
+
+
+## Test Walda (test łącznej istotności)
+
+H0: β1 = β2 = β3 = 0 (wszystkie parametry strukturalne równe zero) H1: co najmniej jeden βi ≠ 0
 
 ```{r, echo=FALSE}
-cat("\n1.2 TEST WALDA (ŁĄCZNA ISTOTNOŚĆ ZMIENNYCH)\n")
-cat("----------------------------------------------------------------\n")
-cat("H0: β1 = β2 = β3 = 0 (wszystkie parametry strukturalne równe zero)\n")
-cat("H1: co najmniej jeden βi ≠ 0\n")
-cat("Poziom istotności: α = 0.05\n\n")
-
-# Test F całkowitej istotności modelu
+model_summary <- summary(model)
 f_statistic <- model_summary$fstatistic
 f_value <- f_statistic[1]
 f_df1 <- f_statistic[2]
 f_df2 <- f_statistic[3]
 f_p_value <- pf(f_value, f_df1, f_df2, lower.tail = FALSE)
 
-cat("WYNIKI TESTU WALDA (Test F):\n")
 cat("Statystyka F:", round(f_value, 4), "\n")
 cat("Stopnie swobody:", f_df1, "i", f_df2, "\n")
 cat("p-value:", if(f_p_value < 0.001) "< 0.001" else round(f_p_value, 6), "\n")
-cat("Wniosek:", ifelse(f_p_value < 0.05, 
-                     "ODRZUCAMY H0 - model jako całość jest istotny statystycznie",
-                     "NIE MA PODSTAW DO ODRZUCENIA H0 - model nieistotny"), "\n\n")
 
-# Test Walda dla wybranych ograniczeń (alternatywna implementacja)
-if(length(coef(model)) > 2) {  # jeśli mamy więcej niż tylko wyraz wolny
-  wald_test <- linearHypothesis(model, names(coef(model))[-1])
-  cat("ALTERNATYWNY TEST WALDA (linearHypothesis):\n")
-  print(wald_test)
-}
+
 ```
 
+Statystyka F: 14.4175, df: 2 i 243, p-value: \< 0.001
 
-## OCENA WSPÓŁCZYNNIKA DETERMINACJI
+Wnioski: Odrzucamy H0 - model jako całość jest istotny statystycznie
 
-### WSPÓŁCZYNNIKI DETERMINACJI R²
-
-```{r, echo=FALSE}
-# Podstawowe statystyki modelu
-r_squared <- model_summary$r.squared
-adj_r_squared <- model_summary$adj.r.squared
-n_obs <- nobs(model)
-n_params <- length(coef(model))
-degrees_freedom <- model_summary$df[2]
-
-cat("WSPÓŁCZYNNIKI DETERMINACJI:\n")
-cat("----------------------------------------------------------------\n")
-cat("R² (współczynnik determinacji):", round(r_squared, 4), "\n")
-cat("R²_adj (skorygowany współczynnik determinacji):", round(adj_r_squared, 4), "\n")
-cat("Liczba obserwacji:", n_obs, "\n")
-cat("Liczba parametrów:", n_params, "\n")
-cat("Stopnie swobody:", degrees_freedom, "\n\n")
-
-# Interpretacja R²
-cat("INTERPRETACJA R²:\n")
-cat("----------------------------------------------------------------\n")
-cat("Model wyjaśnia", round(r_squared * 100, 2), "% zmienności zmiennej D_CLOSE\n")
-cat("Po skorygowaniu o liczbę zmiennych:", round(adj_r_squared * 100, 2), "%\n\n")
-
-# Ocena jakości modelu
-quality_assessment <- if(r_squared > 0.8) {
-  "BARDZO DOBRY MODEL"
-} else if(r_squared > 0.6) {
-  "DOBRY MODEL"
-} else if(r_squared > 0.4) {
-  "ZADOWALAJĄCY MODEL"
-} else {
-  "SŁABY MODEL"
-}
-
-cat("OCENA JAKOŚCI MODELU:", quality_assessment, "\n\n")
-
-# Dodatkowe statystyki
-residual_std_error <- model_summary$sigma
-cat("DODATKOWE STATYSTYKI:\n")
-cat("----------------------------------------------------------------\n")
-cat("Standardowy błąd reszt:", round(residual_std_error, 6), "\n")
-
-# Obliczenie sum kwadratów
-y_actual <- model$model[,1]  # zmienna objaśniana
-y_fitted <- fitted(model)    # wartości dopasowane
-y_mean <- mean(y_actual)     # średnia zmiennej objaśnianej
-
-SST <- sum((y_actual - y_mean)^2)      # całkowita suma kwadratów
-SSE <- sum(residuals(model)^2)         # suma kwadratów reszt
-SSR <- sum((y_fitted - y_mean)^2)      # suma kwadratów regresji
-
-cat("SST (całkowita suma kwadratów):", round(SST, 4), "\n")
-cat("SSR (suma kwadratów regresji):", round(SSR, 4), "\n")
-cat("SSE (suma kwadratów reszt):", round(SSE, 4), "\n")
-cat("Sprawdzenie: SST = SSR + SSE =", round(SSR + SSE, 4), "\n\n")
-```
-
-
-## INTERPRETACJA PARAMETRÓW MODELU
-
-
-```{r, echo=FALSE}
-cat("================================================================================\n")
-cat("3. INTERPRETACJA PARAMETRÓW MODELU\n")
-cat("================================================================================\n\n")
-
-cat("OSTATECZNA POSTAĆ MODELU:\n")
-cat("----------------------------------------------------------------\n")
-
-# Utworzenie równania modelu
+```{r comment=NA,echo=FALSE}
 coeffs <- coef(model)
 equation <- "D_CLOSE = "
 
@@ -1160,116 +985,67 @@ equation <- paste0(equation, " + ε")
 
 cat(equation, "\n\n")
 
-# Interpretacja każdego parametru
-cat("INTERPRETACJA PARAMETRÓW:\n")
-cat("----------------------------------------------------------------\n\n")
 
-param_names <- names(coeffs)
-param_values <- as.numeric(coeffs)
+
+param_names <- rownames(coefficients_df)
+param_values <- coefficients_df$Estimate
 param_pvalues <- coefficients_df$`Pr(>|t|)`
 
-for(i in 1:length(coeffs)) {
-  param_name <- param_names[i]
-  param_value <- param_values[i]
-  p_val <- param_pvalues[i]
-  is_significant <- p_val < 0.05
-  
-  cat("PARAMETR:", param_name, "\n")
-  cat("Wartość:", round(param_value, 6), "\n")
-  cat("Istotność statystyczna:", ifelse(is_significant, "ISTOTNY", "NIEISTOTNY"), 
-      "(p =", round(p_val, 4), ")\n")
-  
-  if(param_name == "(Intercept)") {
-    cat("Interpretacja: Wyraz wolny - średnia wartość D_CLOSE gdy wszystkie\n")
-    cat("              zmienne objaśniające przyjmują wartość zero.\n")
-  } else if(param_name == "D_PMI") {
-    cat("Interpretacja: Wzrost wskaźnika PMI o 1 p.p. (w ujęciu pierwszej różnicy)\n")
-    cat("              powoduje", ifelse(param_value > 0, "wzrost", "spadek"), 
-        "rentowności obligacji o", abs(round(param_value, 6)), "p.p., ceteris paribus.\n")
-    cat("Uzasadnienie: PMI odzwierciedla aktywność przemysłową - wzrost może\n")
-    cat("              sygnalizować ożywienie gospodarcze i oczekiwania wyższych stóp.\n")
-  } else if(param_name == "D_WIG20") {
-    cat("Interpretacja: Wzrost indeksu WIG20 o 1 punkt (w ujęciu pierwszej różnicy)\n")
-    cat("              powoduje", ifelse(param_value > 0, "wzrost", "spadek"), 
-        "rentowności obligacji o", abs(round(param_value, 6)), "p.p., ceteris paribus.\n")
-    cat("Uzasadnienie: Relacja między rynkiem akcji a rynkiem obligacji -\n")
-    cat("              przepływ kapitału między rynkami.\n")
-  } else if(param_name == "D2_OIL") {
-    cat("Interpretacja: Zmiana w drugiej różnicy ceny ropy o 1 USD/baryłka\n")
-    cat("              powoduje", ifelse(param_value > 0, "wzrost", "spadek"), 
-        "rentowności obligacji o", abs(round(param_value, 6)), "p.p., ceteris paribus.\n")
-    cat("Uzasadnienie: Ceny ropy wpływają na inflację - wzrost może zwiększać\n")
-    cat("              oczekiwania inflacyjne i wyższe stopy procentowe.\n")
-  }
-  
-  cat("Kierunek wpływu:", ifelse(param_value > 0, "DODATNI", "UJEMNY"), "\n")
-  cat("Siła oddziaływania:", ifelse(abs(param_value) > 0.01, "SILNA", 
-                                   ifelse(abs(param_value) > 0.001, "UMIARKOWANA", "SŁABA")), "\n")
-  cat("----------------------------------------------------------------\n\n")
-}
 ```
 
-## PODSUMOWANIE OGÓLNE
+# Interpretacja parametrów
 
-```{r, echo=FALSE}
+## Wyraz wolny
+
+Wartość: -0.005865\
+Istotność statystyczna: NIEISTOTNY (p = 0.1244)\
+Interpretacja: Wyraz wolny - średnia wartość D_CLOSE, gdy wszystkie zmienne objaśniające przyjmują wartość zero.\
+Kierunek wpływu: UJEMNY\
+Siła oddziaływania: UMIARKOWANA\
+
+## D_WIG20
+
+Wartość: -0.263429 Istotność statystyczna: ISTOTNY (p = 0)\
+Interpretacja: Wzrost zmiennej 'D_WIG20' o 1 jednostkę powoduje spadek pierwszej różnicy zmiennej 'CLOSE' o 0.263429 jednostek, ceteris paribus.\
+Kierunek wpływu: UJEMNY\
+Siła oddziaływania: SILNA\
+
+## D_OIL
+
+Wartość: 0.155374\
+Istotność statystyczna: ISTOTNY (p = 2e-04)\
+Interpretacja: Wzrost zmiennej 'D_OIL' o 1 jednostkę powoduje wzrost pierwszej różnicy zmiennej 'CLOSE' o 0.155374 jednostek, ceteris paribus.\
+Kierunek wpływu: DODATNI\
+Siła oddziaływania: SILNA\
 
 
-# Liczba istotnych parametrów
-significant_params <- sum(param_pvalues < 0.05)
-total_params <- length(param_pvalues)
+# Testowanie modelu na zbiorze testowym
 
-cat("STATYSTYKI OGÓLNE:\n")
-cat("----------------------------------------------------------------\n")
-cat("Liczba parametrów istotnych statystycznie:", significant_params, "/", total_params, "\n")
-cat("Procent wyjaśnionej zmienności:", round(r_squared * 100, 2), "%\n")
-cat("Jakość dopasowania:", quality_assessment, "\n")
-cat("Istotność modelu jako całości:", ifelse(f_p_value < 0.05, "ISTOTNY", "NIEISTOTNY"), "\n\n")
 
-cat("WNIOSKI:\n")
-cat("----------------------------------------------------------------\n")
+```{r, echo=FALSE, comment=NA}
 
-if(f_p_value < 0.05) {
-  cat("✓ Model jako całość jest istotny statystycznie\n")
-} else {
-  cat("✗ Model jako całość nie jest istotny statystycznie\n")
-}
+pred   <- predict(model, newdata = data_test_stationary)
+actual <- data_test_stationary$D_CLOSE
 
-if(r_squared > 0.5) {
-  cat("✓ Model wykazuje zadowalający poziom dopasowania\n")
-} else {
-  cat("✗ Model wykazuje słabe dopasowanie\n")
-}
 
-if(significant_params > total_params/2) {
-  cat("Większość parametrów jest istotna statystycznie\n")
-} else {
-  cat("✗ Większość parametrów nie jest istotna statystycznie\n")
-}
+MAE   <- mean(abs(actual - pred))
+RMSE  <- sqrt(mean((actual - pred)^2))
+rel_err <- abs(actual - pred) / abs(actual)
+MAPE  <- mean(rel_err) * 100
+sMAPE <- mean(2 * abs(actual - pred) / (abs(actual) + abs(pred))) * 100
 
-cat("\nREKOMENDACJE:\n")
-cat("----------------------------------------------------------------\n")
+cat("=== WYNIKI EX POST (zbiór testowy) ===\n")
+cat("MAE   =", round(MAE, 6), "\n")
+cat("RMSE  =", round(RMSE, 6), "\n")
+cat("MAPE  =", round(MAPE, 2),  "%\n")
+cat("sMAPE =", round(sMAPE, 2), "%\n")
 
-if(significant_params < total_params) {
-  cat("• Rozważ usunięcie nieistotnych zmiennych z modelu\n")
-}
-
-if(r_squared < 0.6) {
-  cat("• Rozważ dodanie dodatkowych zmiennych objaśniających\n")
-  cat("• Sprawdź czy nie pominięto istotnych zmiennych\n")
-}
-
-cat("• Przeprowadź testy diagnostyczne (normalność, autokorelacja, heteroskedastyczność)\n")
-cat("• Sprawdź stabilność parametrów w czasie\n")
+plot(actual, type = "l", col = "black", lwd = 2,
+     main = "Rzeczywiste vs prognoza (zbiór testowy)",
+     ylab = "D_CLOSE (różnice log)", xlab = "czas")
+lines(pred, col = "red", lwd = 2)
+legend("topleft", legend = c("Rzeczywiste", "Prognoza"),
+       col = c("black", "red"), lwd = 2, bty = "n")
 
 ```
-
-
-
-
-
-
-
-
-
-
-
+Wskaźniki MAE = 0,082 i RMSE = 0,110 świadczą o stosunkowo niskim bezwzględnym błędzie prognoz. Natomiast MAPE = 167,3% oraz sMAPE = 153,12% są zawyżone z uwagi na dzielenie przez bardzo małe wartości zmiennej D_CLOSE (różnice logarytmiczne rentowności). W takich przypadkach bardziej reprezentatywne są miary bezwzględne.
