@@ -352,16 +352,21 @@ result <- remove_nonstationarity(
   data,
   non_stationary_vars,
   save_plots = TRUE,
-  show_plots = FALSE
+  show_plots = TRUE
 )
 
 data_stationary <- result$data
 diff_info <- result$diff_info
 
 
-
+for (plot_name in names(result$plots_before)) {
+  print(result$plots_before[[plot_name]])
+  print(result$plots_after[[plot_name]])
+}
 
 ```
+
+\newpage
 
 ## Ponowne sprawdzenie niestacjonarności zmiennych
 
